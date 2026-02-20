@@ -1,0 +1,63 @@
+name: build-base-image
+
+# Manually trigger to clone openclaw/openclaw, build the gateway image, and push to ECR.
+on:
+  workflow_dispatch:
+    inputs:
+      openclaw_ref:
+        description: "Git ref to build (branch, tag, or SHA)"
+        required: true
+        default: "main"
+
+permissions:
+  id-token: write   # AWS OIDC
+  contents: read
+
+env:
+  AWS_REGION: us-west-2
+  ECR_REPOSITORY: openclaw
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Clone openclaw/openclaw
+        uses: actions/checkout@v4
+        with:
+          repository: openclaw/openclaw
+          ref: ${{ github.event.inputs.openclaw_ref }}
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Determine image tag
+        id: tag
+        run: |
+          REF="${{ github.event.inputs.openclaw_ref }}"
+          SHORT_SHA="$(git rev-parse --short HEAD)"
+          TAG="${REF}-${SHORT_SHA}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "image=${{ steps.ecr-login.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Build image
+        run: |
+          docker build -t ${{ steps.tag.outputs.image }} .
+
+      - name: Push to ECR
+        run: |
+          docker push ${{ steps.tag.outputs.image }}
+
+      - name: Summary
+        run: |
+          echo "### Base image pushed :rocket:" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "${{ steps.tag.outputs.image }}" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,141 @@
+name: deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      base_image_tag:
+        description: "Base image tag override (e.g. v0.5.0). Leave blank to use latest."
+        required: false
+
+permissions:
+  id-token: write   # AWS OIDC
+  contents: read
+
+env:
+  AWS_REGION: us-west-2
+  ECR_BASE_REPO: openclaw
+  ECR_SRC_REPO: openclaw-src
+  ECS_CLUSTER: openclaw
+  ECS_SERVICE: openclaw
+  ECS_TASK_FAMILY: openclaw
+  CONTAINER_NAME: openclaw
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Resolve base image
+        id: base
+        run: |
+          REGISTRY="${{ steps.ecr-login.outputs.registry }}"
+          REPO="${{ env.ECR_BASE_REPO }}"
+
+          if [[ -n "${{ github.event.inputs.base_image_tag }}" ]]; then
+            TAG="${{ github.event.inputs.base_image_tag }}"
+          else
+            # Find the latest tag by pushed date
+            TAG=$(aws ecr describe-images \
+              --repository-name "$REPO" \
+              --query 'sort_by(imageDetails,& imagePushedAt)[-1].imageTags[0]' \
+              --output text)
+          fi
+
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "image=${REGISTRY}/${REPO}:${TAG}" >> "$GITHUB_OUTPUT"
+          echo "Using base image: ${REGISTRY}/${REPO}:${TAG}"
+
+      - name: Build derived image
+        id: build
+        run: |
+          REGISTRY="${{ steps.ecr-login.outputs.registry }}"
+          SHA="${{ github.sha }}"
+          SHORT_SHA="${SHA:0:7}"
+          IMAGE="${REGISTRY}/${{ env.ECR_SRC_REPO }}:${SHORT_SHA}"
+
+          docker build \
+            --build-arg BASE_IMAGE=${{ steps.base.outputs.image }} \
+            -t "${IMAGE}" \
+            .
+
+          echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
+          echo "tag=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Push to ECR
+        run: |
+          docker push ${{ steps.build.outputs.image }}
+
+      - name: Update ECS task definition
+        id: task-def
+        run: |
+          # Fetch current task definition
+          TASK_DEF=$(aws ecs describe-task-definition \
+            --task-definition ${{ env.ECS_TASK_FAMILY }} \
+            --query 'taskDefinition')
+
+          # Update the image in the container definition
+          NEW_TASK_DEF=$(echo "$TASK_DEF" | jq \
+            --arg IMAGE "${{ steps.build.outputs.image }}" \
+            --arg CONTAINER "${{ env.CONTAINER_NAME }}" \
+            '.containerDefinitions |= map(if .name == $CONTAINER then .image = $IMAGE else . end)')
+
+          # Strip fields that can't be included in register-task-definition
+          NEW_TASK_DEF=$(echo "$NEW_TASK_DEF" | jq 'del(
+            .taskDefinitionArn,
+            .revision,
+            .status,
+            .requiresAttributes,
+            .compatibilities,
+            .registeredAt,
+            .registeredBy
+          )')
+
+          # Register the new task definition
+          NEW_ARN=$(aws ecs register-task-definition \
+            --cli-input-json "$NEW_TASK_DEF" \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text)
+
+          echo "arn=${NEW_ARN}" >> "$GITHUB_OUTPUT"
+          echo "Registered task definition: ${NEW_ARN}"
+
+      - name: Deploy to ECS
+        run: |
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service ${{ env.ECS_SERVICE }} \
+            --task-definition ${{ steps.task-def.outputs.arn }} \
+            --force-new-deployment
+
+      - name: Wait for deployment
+        run: |
+          echo "Waiting for ECS service to stabilize..."
+          aws ecs wait services-stable \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE }}
+          echo "Deployment complete!"
+
+      - name: Summary
+        run: |
+          echo "### Deployment successful :rocket:" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Detail | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|--------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **Image** | \`${{ steps.build.outputs.image }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **Base** | \`${{ steps.base.outputs.image }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **Task Def** | \`${{ steps.task-def.outputs.arn }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **Commit** | \`${{ github.sha }}\` |" >> "$GITHUB_STEP_SUMMARY"
