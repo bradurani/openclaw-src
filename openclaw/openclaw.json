@@ -43,7 +43,7 @@
     "elevated": {
       "enabled": true,
       "allowFrom": {
-        "slack": true
+        "slack": ["*"]
       }
     }
   },
