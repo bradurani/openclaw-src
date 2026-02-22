@@ -1,0 +1,22 @@
+# Runtime state — lives on EFS, not in the image
+openclaw/sessions/
+openclaw/logs/
+openclaw/workspace/
+openclaw/credentials/
+openclaw/.env
+openclaw/openclaw.json.bak*
+
+# Git / editor
+.git/
+.github/
+.gitignore
+.vscode/
+.envrc
+.env
+*.md
+
+# Node
+node_modules/
+
+# macOS
+.DS_Store

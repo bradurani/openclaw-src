@@ -1,0 +1,39 @@
+# Environment / secrets
+.envrc
+.env
+.env.*
+
+# OpenClaw runtime state (persists on EFS in production, local-only in dev)
+openclaw/sessions/
+openclaw/logs/
+openclaw/workspace/
+openclaw/credentials/
+openclaw/identity/
+openclaw/.env
+openclaw/openclaw.json.bak*
+
+# Extension dependencies
+openclaw/extensions/*/node_modules/
+
+# macOS
+.DS_Store
+
+# Editors
+.idea/
+*.swp
+*.swo
+*~
+
+# Node
+node_modules/
+
+# Logs
+*.log
+
+# Docker
+docker-compose.override.yml
+
+# Terraform (if any local plans)
+*.tfstate
+*.tfstate.*
+.terraform/
