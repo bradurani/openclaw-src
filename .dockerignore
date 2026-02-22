@@ -3,6 +3,8 @@ openclaw/sessions/
 openclaw/logs/
 openclaw/workspace/
 openclaw/credentials/
+openclaw/cron/
+openclaw/identity/
 openclaw/.env
 openclaw/openclaw.json.bak*
 

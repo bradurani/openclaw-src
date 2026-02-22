@@ -20,7 +20,7 @@
         },
         "openai/gpt-5.2-codex": {}
       },
-      "workspace": "/home/node/.openclaw/workspace",
+      "workspace": "${OPENCLAW_WORKSPACE_DIR:-/home/node/.openclaw/workspace}",
       "compaction": {
         "mode": "safeguard"
       },
@@ -36,7 +36,16 @@
   "commands": {
     "native": "auto",
     "nativeSkills": "auto",
-    "restart": true
+    "restart": true,
+    "bash": true
+  },
+  "tools": {
+    "elevated": {
+      "enabled": true,
+      "allowFrom": {
+        "slack": true
+      }
+    }
   },
   "hooks": {
     "internal": {

@@ -20,9 +20,39 @@ COPY --chown=node:node openclaw/extensions/     /home/node/.openclaw/extensions/
 # Install dependencies for custom extensions (memory-pgvector)
 RUN cd /home/node/.openclaw/extensions/memory-pgvector && npm install --omit=dev
 
+# ---------------------------------------------------------------------------
+# CLI tools: AWS CLI, GitHub CLI, Terraform
+# ---------------------------------------------------------------------------
+USER root
+
+# AWS CLI v2
+RUN curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o /tmp/awscli.zip \
+    && unzip -q /tmp/awscli.zip -d /tmp \
+    && /tmp/aws/install \
+    && rm -rf /tmp/aws /tmp/awscli.zip
+
+# GitHub CLI
+RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+      -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+      > /etc/apt/sources.list.d/github-cli.list \
+    && apt-get update && apt-get install -y --no-install-recommends gh \
+    && rm -rf /var/lib/apt/lists/*
+
+# Terraform (HashiCorp APT repo)
+RUN curl -fsSL https://apt.releases.hashicorp.com/gpg | gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com bookworm main" \
+      > /etc/apt/sources.list.d/hashicorp.list \
+    && apt-get update && apt-get install -y --no-install-recommends terraform \
+    && rm -rf /var/lib/apt/lists/*
+
 # Entrypoint script — merges image config with EFS persistent state on ECS.
 COPY --chown=node:node script/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
+
+# Git identity for the agent (commits appear as bradurani)
+RUN git config --system user.name "bradurani" \
+    && git config --system user.email "4195952+bradurani@users.noreply.github.com"
 
 RUN chown -R node:node /home/node/.openclaw
 USER node
