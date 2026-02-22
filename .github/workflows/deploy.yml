@@ -79,6 +79,11 @@ jobs:
         run: |
           docker push ${{ steps.build.outputs.image }}
 
+          # Also tag as 'latest' so Terraform-managed task definitions can resolve
+          LATEST="${{ steps.ecr-login.outputs.registry }}/${{ env.ECR_SRC_REPO }}:latest"
+          docker tag ${{ steps.build.outputs.image }} "${LATEST}"
+          docker push "${LATEST}"
+
       - name: Update ECS task definition
         id: task-def
         run: |
