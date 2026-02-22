@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Connect to the OpenClaw RDS instance using credentials from Secrets Manager.
+# Usage: script/psql [psql args...]
+#   script/psql                     # interactive session
+#   script/psql -c 'SELECT 1'      # run a query
+#   script/psql -c 'CREATE EXTENSION vector;'
+set -euo pipefail
+
+REGION="${AWS_REGION:-us-west-2}"
+SECRET_ID="openclaw/pgvector-url"
+
+echo "Fetching connection URL from Secrets Manager..." >&2
+PGVECTOR_URL="$(aws secretsmanager get-secret-value \
+  --secret-id "$SECRET_ID" \
+  --region "$REGION" \
+  --query 'SecretString' \
+  --output text)"
+
+if [[ -z "$PGVECTOR_URL" ]]; then
+  echo "Error: failed to retrieve secret $SECRET_ID" >&2
+  exit 1
+fi
+
+exec psql "$PGVECTOR_URL" "$@"
