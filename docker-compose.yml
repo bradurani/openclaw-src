@@ -9,6 +9,8 @@
 # Usage:
 #   docker compose up openclaw-gateway    # start gateway (foreground)
 #   docker compose run --rm openclaw-cli  # interactive CLI session
+#   docker compose run --rm remote-cli nodes pending
+#   docker compose run --rm remote-cli nodes approve <requestId>
 #   docker compose run --rm psql          # psql shell to remote RDS
 #
 # Secrets are fetched from Secrets Manager via script/fetch-env -> openclaw/.env (gitignored).
@@ -63,6 +65,38 @@ services:
     profiles:
       - cli
     entrypoint: ["node", "openclaw.mjs"]
+
+  # --------------------------------------------------------------------------
+  # Remote CLI — run commands against the ECS gateway via API Gateway
+  # Usage: docker compose run --rm remote-cli nodes pending
+  #        docker compose run --rm remote-cli nodes approve <requestId>
+  #        docker compose run --rm remote-cli devices list
+  #        docker compose run --rm remote-cli health
+  #        docker compose run --rm remote-cli gateway call node.list
+  # --------------------------------------------------------------------------
+  remote-cli:
+    build:
+      context: .
+      args:
+        BASE_IMAGE: openclaw:local
+    env_file:
+      - openclaw/.env
+    environment:
+      HOME: /home/node
+      TERM: xterm-256color
+      BROWSER: echo
+    stdin_open: true
+    tty: true
+    init: true
+    profiles:
+      - tools
+    entrypoint:
+      [
+        "sh",
+        "-c",
+        "exec node openclaw.mjs \"$@\" --url wss://xihqjmq427.execute-api.us-west-2.amazonaws.com --token \"$OPENCLAW_GATEWAY_TOKEN\"",
+        "--",
+      ]
 
   # --------------------------------------------------------------------------
   # psql — interactive shell to remote RDS
