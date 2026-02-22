@@ -1,0 +1,17 @@
+{
+  "name": "@openclaw/memory-pgvector",
+  "version": "0.1.0",
+  "private": true,
+  "description": "OpenClaw pgvector-backed long-term memory plugin with auto-recall/capture",
+  "type": "module",
+  "dependencies": {
+    "pg": "^8.13.1",
+    "@sinclair/typebox": "0.34.48",
+    "openai": "^6.22.0"
+  },
+  "openclaw": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}
