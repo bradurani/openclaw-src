@@ -52,7 +52,7 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 
 # Git identity for the agent (commits appear as bradurani)
 RUN git config --system user.name "bradurani" \
-    && git config --system user.email "4195952+bradurani@users.noreply.github.com"
+    && git config --system user.email "bradurani@gmail.com"
 
 RUN chown -R node:node /home/node/.openclaw
 USER node
