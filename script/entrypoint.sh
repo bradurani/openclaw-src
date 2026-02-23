@@ -26,13 +26,13 @@ if [ -d "$EFS_DIR" ] && mountpoint -q "$EFS_DIR" 2>/dev/null; then
     # Remove the baked-in directory (or placeholder) from the image
     rm -rf "$local_path"
 
-    # Symlink so openclaw reads/writes to EFS transparently
-    ln -sfn "$efs_path" "$local_path"
+  # Symlink so openclaw reads/writes to EFS transparently
+  ln -sfn "$EFS_DIR" "$OPENCLAW_DIR"
 
-    echo "entrypoint:   ${dir}/ -> ${efs_path}"
-  done
+  echo "entrypoint:   $OPENCLAW_DIR -> $EFS_DIR"
 else
-  echo "entrypoint: no EFS mount at $EFS_DIR — running with local state"
+  echo "entrypoint: no EFS mount at $EFS_DIR — exiting"
+  exit 1 
 fi
 
 chmod 700 "$OPENCLAW_DIR" -R
