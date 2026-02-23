@@ -67,7 +67,7 @@ services:
     entrypoint: ["node", "openclaw.mjs"]
 
   # --------------------------------------------------------------------------
-  # Remote CLI — run commands against the ECS gateway via API Gateway
+  # Remote CLI — run commands against the ECS gateway via WebSocket
   # Usage: docker compose run --rm remote-cli nodes pending
   #        docker compose run --rm remote-cli nodes approve <requestId>
   #        docker compose run --rm remote-cli devices list
@@ -85,6 +85,9 @@ services:
       HOME: /home/node
       TERM: xterm-256color
       BROWSER: echo
+      OPENCLAW_GATEWAY_URL: ${OPENCLAW_GATEWAY_URL:?Set OPENCLAW_GATEWAY_URL to ws://<ecs-public-ip>:8080}
+    volumes:
+      - remote-cli-state:/home/node/.openclaw
     stdin_open: true
     tty: true
     init: true
@@ -94,7 +97,7 @@ services:
       [
         "sh",
         "-c",
-        "exec node openclaw.mjs \"$@\" --url wss://xihqjmq427.execute-api.us-west-2.amazonaws.com --token \"$OPENCLAW_GATEWAY_TOKEN\"",
+        "exec node openclaw.mjs \"$$@\" --url \"$$OPENCLAW_GATEWAY_URL\" --token \"$$OPENCLAW_GATEWAY_TOKEN\"",
         "--",
       ]
 
@@ -111,4 +114,8 @@ services:
     tty: true
     profiles:
       - tools
-    entrypoint: ["sh", "-c", "exec psql \"$PGVECTOR_URL\" \"$@\"", "--"]
+    entrypoint: ["sh", "-c", "exec psql \"$$PGVECTOR_URL\" \"$$@\"", "--"]
+
+volumes:
+  remote-cli-state:
+    name: openclaw-remote-cli-state
