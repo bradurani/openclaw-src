@@ -11,28 +11,20 @@ OPENCLAW_DIR="${HOME}/.openclaw"
 EFS_DIR="${EFS_MOUNT_PATH:-/data}"
 
 # Directories that hold runtime state and must persist across container restarts.
-PERSISTENT_DIRS="agents memory sessions logs workspace credentials cron identity"
-
+# Symlink the entire OPENCLAW_DIR to EFS_DIR for persistent state
 if [ -d "$EFS_DIR" ] && mountpoint -q "$EFS_DIR" 2>/dev/null; then
   echo "entrypoint: EFS detected at $EFS_DIR — linking persistent state"
 
-  for dir in $PERSISTENT_DIRS; do
-    efs_path="${EFS_DIR}/${dir}"
-    local_path="${OPENCLAW_DIR}/${dir}"
+  # Remove the baked-in directory (or placeholder) from the image
+  rm -rf "$OPENCLAW_DIR"
 
-    # Create directory on EFS if it doesn't exist yet
-    mkdir -p "$efs_path"
+  # Symlink so openclaw reads/writes to EFS transparently
+  ln -sfn "$EFS_DIR" "$OPENCLAW_DIR"
 
-    # Remove the baked-in directory (or placeholder) from the image
-    rm -rf "$local_path"
-
-    # Symlink so openclaw reads/writes to EFS transparently
-    ln -sfn "$efs_path" "$local_path"
-
-    echo "entrypoint:   ${dir}/ -> ${efs_path}"
-  done
+  echo "entrypoint:   $OPENCLAW_DIR -> $EFS_DIR"
 else
-  echo "entrypoint: no EFS mount at $EFS_DIR — running with local state"
+  echo "entrypoint: no EFS mount at $EFS_DIR — exiting"
+  exit 1 
 fi
 
 # Map secrets to the env vars openclaw expects

@@ -1,8 +1,8 @@
 # .bashrc for OpenClaw container
 
 # Enable bash completion if available
-if [ -f /etc/bash_completion ]; then
-    . /etc/bash_completion
+if [ -f "$HOME/.openclaw/completions/openclaw.bash" ]; then
+    . "$HOME/.openclaw/completions/openclaw.bash"
 fi
 
 # Set a simple prompt
