@@ -10,30 +10,43 @@ set -e
 OPENCLAW_DIR="${HOME}/.openclaw"
 EFS_DIR="${EFS_MOUNT_PATH:-/data}"
 
-# Directories that hold runtime state and must persist across container restarts.
-PERSISTENT_DIRS="memory sessions logs workspace credentials cron identity"
+
+# Symlink the entire .openclaw directory to EFS
+EFS_OPENCLAW_DIR="${EFS_DIR}/.openclaw"
 
 if [ -d "$EFS_DIR" ] && mountpoint -q "$EFS_DIR" 2>/dev/null; then
-  echo "entrypoint: EFS detected at $EFS_DIR — linking persistent state"
+  echo "entrypoint: EFS detected at $EFS_DIR — linking .openclaw directory"
 
-  for dir in $PERSISTENT_DIRS; do
-    efs_path="${EFS_DIR}/${dir}"
-    local_path="${OPENCLAW_DIR}/${dir}"
+  # Create .openclaw directory on EFS if it doesn't exist
+  mkdir -p "$EFS_OPENCLAW_DIR"
+  # Remove the baked-in .openclaw directory from the image
+  rm -rf "$OPENCLAW_DIR"
 
-    # Create directory on EFS if it doesn't exist yet
-    mkdir -p "$efs_path"
+  # Symlink so openclaw reads/writes to EFS transparently
+  ln -sfn "$EFS_OPENCLAW_DIR" "$OPENCLAW_DIR"
 
-    # Remove the baked-in directory (or placeholder) from the image
-    rm -rf "$local_path"
-
-    # Symlink so openclaw reads/writes to EFS transparently
-    ln -sfn "$efs_path" "$local_path"
-  done
-
-  echo "entrypoint:  $efs_path linked to $local_path for persistence"
+  echo "entrypoint: $OPENCLAW_DIR linked to $EFS_OPENCLAW_DIR for persistence"
 else
-  echo "entrypoint: no EFS mount at $EFS_DIR — exiting"
-  exit 1 
+  echo "entrypoint: no EFS mount at $EFS_DIR"
+  echo "entrypoint: using local $OPENCLAW_DIR"
+fi
+
+# Copy completions directory into local .openclaw
+if [ -d "/home/node/src/openclaw/completions" ]; then
+  cp -r /home/node/src/openclaw/completions "$OPENCLAW_DIR/"
+fi
+
+# Copy each subfolder from /home/node/src/openclaw/extensions to $OPENCLAW_DIR/extensions
+if [ -d "/home/node/src/openclaw/extensions" ]; then
+  mkdir -p "$OPENCLAW_DIR/extensions"
+  for ext_dir in /home/node/src/openclaw/extensions/*/; do
+    if [ -d "$ext_dir" ]; then
+      ext_name=$(basename "$ext_dir")
+      echo "entrypoint: copying extension $ext_name to $OPENCLAW_DIR/extensions/"
+      rm -rf "$OPENCLAW_DIR/extensions/$ext_name"
+      cp -r "$ext_dir" "$OPENCLAW_DIR/extensions/$ext_name"
+    fi
+  done
 fi
 
 # Map secrets to the env vars openclaw expects
