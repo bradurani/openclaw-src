@@ -30,7 +30,7 @@ if [ -d "$EFS_DIR" ] && mountpoint -q "$EFS_DIR" 2>/dev/null; then
     ln -sfn "$efs_path" "$local_path"
   done
 
-  echo "entrypoint:   $OPENCLAW_DIR -> $EFS_DIR"
+  echo "entrypoint:  $efs_path linked to $local_path for persistence"
 else
   echo "entrypoint: no EFS mount at $EFS_DIR — exiting"
   exit 1 
