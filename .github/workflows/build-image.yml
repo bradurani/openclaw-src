@@ -22,16 +22,10 @@ jobs:
       ECR_REPO: openclaw-src
     steps:
       - uses: actions/checkout@v4
-      - name: Check AWS credentials
-        run: |
-          if [ -z "${{ secrets.AWS_OIDC_ROLE }}" ] || [ -z "${{ secrets.AWS_ACCOUNT_ID }}" ]; then
-            echo "ERROR: AWS_OIDC_ROLE or AWS_ACCOUNT_ID secret is not set."
-            exit 1
-          fi
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
