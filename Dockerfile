@@ -37,11 +37,8 @@ COPY skills/ ./skills/
 # Static config — baked into the image from git.
 # Runtime state dirs (sessions, logs, workspace, credentials) are NOT included;
 # they live on EFS and are symlinked at startup by the entrypoint script.
-COPY --chown=node:node openclaw/openclaw.json   /home/node/.openclaw/openclaw.json
-COPY --chown=node:node openclaw/agents/         /home/node/.openclaw/agents/
-COPY --chown=node:node openclaw/hooks/          /home/node/.openclaw/hooks/
-COPY --chown=node:node openclaw/completions/    /home/node/.openclaw/completions/
-COPY --chown=node:node openclaw/extensions/     /home/node/.openclaw/extensions/
+COPY --chown=node:node openclaw/completions/    /home/node/src/openclaw/completions/
+COPY --chown=node:node openclaw/extensions/     /home/node/src/openclaw/extensions/
 
 # Install dependencies for custom extensions (memory-pgvector)
 RUN cd /home/node/.openclaw/extensions/memory-pgvector && npm install --omit=dev
