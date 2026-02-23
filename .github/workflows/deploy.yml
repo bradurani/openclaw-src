@@ -30,8 +30,9 @@ env:
   CONTAINER_NAME: openclaw
 
 jobs:
-  build-and-deploy:
+  deploy:
     runs-on: ubuntu-latest
+    needs: build-and-push
 
     steps:
       - uses: actions/checkout@v4
