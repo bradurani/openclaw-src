@@ -18,7 +18,7 @@ if [ -d "$EFS_DIR" ] && mountpoint -q "$EFS_DIR" 2>/dev/null; then
 
   for dir in $PERSISTENT_DIRS; do
     efs_path="${EFS_DIR}/${dir}"
-    local_path="${OPENCLAW_DIR}/${dir}"cd /
+    local_path="${OPENCLAW_DIR}/${dir}"
 
     # Create directory on EFS if it doesn't exist yet
     mkdir -p "$efs_path"
