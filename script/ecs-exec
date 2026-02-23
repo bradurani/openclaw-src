@@ -28,7 +28,7 @@ fi
 
 echo "Connecting to $TASK_ARN ..."
 
-exec AWS_PROFILE="${AWS_PROFILE:-openclaw-dev}" aws ecs execute-command \
+exec env AWS_PROFILE="${AWS_PROFILE:-openclaw-dev}" aws ecs execute-command \
   --cluster "$CLUSTER" \
   --task "$TASK_ARN" \
   --container "$CONTAINER" \
