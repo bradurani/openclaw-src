@@ -72,6 +72,8 @@
       "appToken": "${SLACK_APP_TOKEN}",
       "userTokenReadOnly": true,
       "groupPolicy": "allowlist",
+      "dmPolicy": "open",
+      "allowFrom": ["*"],
       "channels": {
         "C0AFY80CEQZ": {
           "allow": true
