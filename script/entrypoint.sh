@@ -11,12 +11,20 @@ OPENCLAW_DIR="${HOME}/.openclaw"
 EFS_DIR="${EFS_MOUNT_PATH:-/data}"
 
 # Directories that hold runtime state and must persist across container restarts.
-# Symlink the entire OPENCLAW_DIR to EFS_DIR for persistent state
+PERSISTENT_DIRS="memory sessions logs workspace credentials cron identity"
+
 if [ -d "$EFS_DIR" ] && mountpoint -q "$EFS_DIR" 2>/dev/null; then
   echo "entrypoint: EFS detected at $EFS_DIR — linking persistent state"
 
-  # Remove the baked-in directory (or placeholder) from the image
-  rm -rf "$OPENCLAW_DIR"
+  for dir in $PERSISTENT_DIRS; do
+    efs_path="${EFS_DIR}/${dir}"
+    local_path="${OPENCLAW_DIR}/${dir}"cd /
+
+    # Create directory on EFS if it doesn't exist yet
+    mkdir -p "$efs_path"
+
+    # Remove the baked-in directory (or placeholder) from the image
+    rm -rf "$local_path"
 
   # Symlink so openclaw reads/writes to EFS transparently
   ln -sfn "$EFS_DIR" "$OPENCLAW_DIR"
@@ -27,10 +35,12 @@ else
   exit 1 
 fi
 
+chmod 700 "$OPENCLAW_DIR" -R
+
 # Map secrets to the env vars openclaw expects
 export CHANNELS__SLACK__TOKEN="${CHANNELS__SLACK__TOKEN:-$SLACK_BOT_TOKEN}"
-export OPENAI_DEFAULT_MODEL="openai/gpt-5.2"
-export OPENAI_CODING_MODEL="openai/gpt-5.1-codex"
+ENV OPENAI_DEFAULT_MODEL="openai/gpt-5.2"
+ENV OPENAI_CODING_MODEL="openai/gpt-5.1-codex"
 
 # Hand off to the original CMD
 exec "$@"

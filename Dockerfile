@@ -46,11 +46,6 @@ RUN curl -fsSL https://apt.releases.hashicorp.com/gpg | gpg --dearmor -o /usr/sh
     && apt-get update && apt-get install -y --no-install-recommends terraform \
     && rm -rf /var/lib/apt/lists/*
 
-
-# Set OpenAI model defaults
-ENV OPENAI_DEFAULT_MODEL="openai/gpt-5.2"
-ENV OPENAI_CODING_MODEL="openai/gpt-5.1-codex"
-
 # Entrypoint script — merges image config with EFS persistent state on ECS.
 COPY --chown=node:node script/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
