@@ -35,5 +35,8 @@ else
   echo "entrypoint: no EFS mount at $EFS_DIR — running with local state"
 fi
 
+# Map secrets to the env vars openclaw expects
+export CHANNELS__SLACK__TOKEN="${CHANNELS__SLACK__TOKEN:-$SLACK_BOT_TOKEN}"
+
 # Hand off to the original CMD
 exec "$@"
