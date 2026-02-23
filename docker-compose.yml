@@ -87,7 +87,7 @@ services:
       BROWSER: echo
       OPENCLAW_GATEWAY_URL: ${OPENCLAW_GATEWAY_URL:?Set OPENCLAW_GATEWAY_URL to ws://<ecs-public-ip>:8080}
     volumes:
-      - remote-cli-state:/home/node/.openclaw
+      - ~/.openclaw:/home/node/.openclaw
     stdin_open: true
     tty: true
     init: true
@@ -97,7 +97,7 @@ services:
       [
         "sh",
         "-c",
-        "exec node openclaw.mjs \"$$@\" --url \"$$OPENCLAW_GATEWAY_URL\" --token \"$$OPENCLAW_GATEWAY_TOKEN\"",
+        "if [ $$# -eq 0 ]; then exec node openclaw.mjs tui; else exec node openclaw.mjs \"$$@\"; fi",
         "--",
       ]
 
@@ -116,6 +116,3 @@ services:
       - tools
     entrypoint: ["sh", "-c", "exec psql \"$$PGVECTOR_URL\" \"$$@\"", "--"]
 
-volumes:
-  remote-cli-state:
-    name: openclaw-remote-cli-state

@@ -11,14 +11,14 @@ OPENCLAW_DIR="${HOME}/.openclaw"
 EFS_DIR="${EFS_MOUNT_PATH:-/data}"
 
 # Directories that hold runtime state and must persist across container restarts.
-PERSISTENT_DIRS="sessions logs workspace credentials cron identity"
+PERSISTENT_DIRS="agents memory sessions logs workspace credentials cron identity"
 
 if [ -d "$EFS_DIR" ] && mountpoint -q "$EFS_DIR" 2>/dev/null; then
   echo "entrypoint: EFS detected at $EFS_DIR — linking persistent state"
 
   for dir in $PERSISTENT_DIRS; do
     efs_path="${EFS_DIR}/${dir}"
-    local_path="${OPENCLAW_DIR}/${dir}"
+    local_path="${OPENCLAW_DIR}/${dir}"cd /
 
     # Create directory on EFS if it doesn't exist yet
     mkdir -p "$efs_path"
@@ -37,6 +37,8 @@ fi
 
 # Map secrets to the env vars openclaw expects
 export CHANNELS__SLACK__TOKEN="${CHANNELS__SLACK__TOKEN:-$SLACK_BOT_TOKEN}"
+export OPENAI_DEFAULT_MODEL="openai/gpt-5.2"
+export OPENAI_CODING_MODEL="openai/gpt-5.1-codex"
 
 # Hand off to the original CMD
 exec "$@"
