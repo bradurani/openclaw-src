@@ -26,8 +26,9 @@ if [ -d "$EFS_DIR" ] && mountpoint -q "$EFS_DIR" 2>/dev/null; then
     # Remove the baked-in directory (or placeholder) from the image
     rm -rf "$local_path"
 
-  # Symlink so openclaw reads/writes to EFS transparently
-  ln -sfn "$efs_path" "$local_path"
+    # Symlink so openclaw reads/writes to EFS transparently
+    ln -sfn "$efs_path" "$local_path"
+  done
 
   echo "entrypoint:   $OPENCLAW_DIR -> $EFS_DIR"
 else
@@ -39,6 +40,7 @@ fi
 export CHANNELS__SLACK__TOKEN="${CHANNELS__SLACK__TOKEN:-$SLACK_BOT_TOKEN}"
 ENV OPENAI_DEFAULT_MODEL="openai/gpt-5.2"
 ENV OPENAI_CODING_MODEL="openai/gpt-5.1-codex"
-
+# Ensure the openclaw directory has secure permissions
+chmod 700 "$OPENCLAW_DIR"
 # Hand off to the original CMD
 exec "$@"
