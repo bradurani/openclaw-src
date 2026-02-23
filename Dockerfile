@@ -55,6 +55,9 @@ ENV OPENAI_CODING_MODEL="openai/gpt-5.1-codex"
 COPY --chown=node:node script/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
+# Add .bashrc for node user
+COPY --chown=node:node .bashrc /home/node/.bashrc
+
 # Git identity for the agent (commits appear as bradurani)
 RUN git config --system user.name "bradurani" \
     && git config --system user.email "bradurani@gmail.com"
