@@ -3,23 +3,6 @@
 ARG BASE_IMAGE
 FROM ${BASE_IMAGE}
 
-# Add any local configuration or customizations below.
-# Examples:
-COPY config/ ./config/
-COPY skills/ ./skills/
-
-# Static config — baked into the image from git.
-# Runtime state dirs (sessions, logs, workspace, credentials) are NOT included;
-# they live on EFS and are symlinked at startup by the entrypoint script.
-COPY --chown=node:node openclaw/openclaw.json   /home/node/.openclaw/openclaw.json
-COPY --chown=node:node openclaw/agents/         /home/node/.openclaw/agents/
-COPY --chown=node:node openclaw/hooks/          /home/node/.openclaw/hooks/
-COPY --chown=node:node openclaw/completions/    /home/node/.openclaw/completions/
-COPY --chown=node:node openclaw/extensions/     /home/node/.openclaw/extensions/
-
-# Install dependencies for custom extensions (memory-pgvector)
-RUN cd /home/node/.openclaw/extensions/memory-pgvector && npm install --omit=dev
-
 # ---------------------------------------------------------------------------
 # CLI tools: AWS CLI, GitHub CLI, Terraform
 # ---------------------------------------------------------------------------
@@ -45,6 +28,23 @@ RUN curl -fsSL https://apt.releases.hashicorp.com/gpg | gpg --dearmor -o /usr/sh
       > /etc/apt/sources.list.d/hashicorp.list \
     && apt-get update && apt-get install -y --no-install-recommends terraform \
     && rm -rf /var/lib/apt/lists/*
+
+# Add any local configuration or customizations below.
+# Examples:
+COPY config/ ./config/
+COPY skills/ ./skills/
+
+# Static config — baked into the image from git.
+# Runtime state dirs (sessions, logs, workspace, credentials) are NOT included;
+# they live on EFS and are symlinked at startup by the entrypoint script.
+COPY --chown=node:node openclaw/openclaw.json   /home/node/.openclaw/openclaw.json
+COPY --chown=node:node openclaw/agents/         /home/node/.openclaw/agents/
+COPY --chown=node:node openclaw/hooks/          /home/node/.openclaw/hooks/
+COPY --chown=node:node openclaw/completions/    /home/node/.openclaw/completions/
+COPY --chown=node:node openclaw/extensions/     /home/node/.openclaw/extensions/
+
+# Install dependencies for custom extensions (memory-pgvector)
+RUN cd /home/node/.openclaw/extensions/memory-pgvector && npm install --omit=dev
 
 # Entrypoint script — merges image config with EFS persistent state on ECS.
 COPY --chown=node:node script/entrypoint.sh /usr/local/bin/entrypoint.sh

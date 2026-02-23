@@ -38,9 +38,9 @@ fi
 
 # Map secrets to the env vars openclaw expects
 export CHANNELS__SLACK__TOKEN="${CHANNELS__SLACK__TOKEN:-$SLACK_BOT_TOKEN}"
-ENV OPENAI_DEFAULT_MODEL="openai/gpt-5.2"
-ENV OPENAI_CODING_MODEL="openai/gpt-5.1-codex"
+export OPENAI_DEFAULT_MODEL="openai/gpt-5.2"
+export OPENAI_CODING_MODEL="openai/gpt-5.1-codex"
 # Ensure the openclaw directory has secure permissions
-chmod 700 "$OPENCLAW_DIR"
+# chmod 700 "$OPENCLAW_DIR"
 # Hand off to the original CMD
 exec "$@"
