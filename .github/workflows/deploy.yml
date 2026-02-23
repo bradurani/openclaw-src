@@ -3,6 +3,13 @@ name: deploy
 on:
   push:
     branches: [main]
+    paths:
+      - 'Dockerfile'
+      - 'config/**'
+      - 'skills/**'
+      - 'openclaw/**'
+      - 'script/entrypoint.sh'
+      - '.github/workflows/deploy.yml'
   workflow_dispatch:
     inputs:
       base_image_tag:
@@ -59,32 +66,81 @@ jobs:
           echo "image=${REGISTRY}/${REPO}:${TAG}" >> "$GITHUB_OUTPUT"
           echo "Using base image: ${REGISTRY}/${REPO}:${TAG}"
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Build derived image
         id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          build-args: BASE_IMAGE=${{ steps.base.outputs.image }}
+          tags: ${{ steps.ecr-login.outputs.registry }}/${{ env.ECR_SRC_REPO }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Tag image
+        id: tag
         run: |
           REGISTRY="${{ steps.ecr-login.outputs.registry }}"
           SHA="${{ github.sha }}"
           SHORT_SHA="${SHA:0:7}"
-          IMAGE="${REGISTRY}/${{ env.ECR_SRC_REPO }}:${SHORT_SHA}"
+          FULL_TAG="${REGISTRY}/${{ env.ECR_SRC_REPO }}:${SHA}"
+          SHORT_TAG="${REGISTRY}/${{ env.ECR_SRC_REPO }}:${SHORT_SHA}"
 
-          docker build \
-            --build-arg BASE_IMAGE=${{ steps.base.outputs.image }} \
-            -t "${IMAGE}" \
-            .
+          docker tag "${FULL_TAG}" "${SHORT_TAG}"
 
-          echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
+          echo "image=${SHORT_TAG}" >> "$GITHUB_OUTPUT"
           echo "tag=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
 
       - name: Push to ECR
         run: |
-          docker push ${{ steps.build.outputs.image }}
+          docker push ${{ steps.tag.outputs.image }}
 
           # Also tag as 'latest' so Terraform-managed task definitions can resolve
           LATEST="${{ steps.ecr-login.outputs.registry }}/${{ env.ECR_SRC_REPO }}:latest"
-          docker tag ${{ steps.build.outputs.image }} "${LATEST}"
+          docker tag ${{ steps.tag.outputs.image }} "${LATEST}"
           docker push "${LATEST}"
 
+      - name: Check if image changed
+        id: check
+        run: |
+          # Get the digest of the image currently running in ECS
+          CURRENT_IMAGE=$(aws ecs describe-task-definition \
+            --task-definition ${{ env.ECS_TASK_FAMILY }} \
+            --query "taskDefinition.containerDefinitions[?name=='${{ env.CONTAINER_NAME }}'].image | [0]" \
+            --output text)
+
+          # Get the digest of the just-pushed image
+          NEW_DIGEST=$(aws ecr describe-images \
+            --repository-name ${{ env.ECR_SRC_REPO }} \
+            --image-ids imageTag=${{ steps.tag.outputs.tag }} \
+            --query 'imageDetails[0].imageDigest' \
+            --output text)
+
+          # Get the digest of the currently deployed image
+          CURRENT_TAG=$(echo "$CURRENT_IMAGE" | awk -F: '{print $2}')
+          CURRENT_DIGEST=$(aws ecr describe-images \
+            --repository-name ${{ env.ECR_SRC_REPO }} \
+            --image-ids imageTag="${CURRENT_TAG}" \
+            --query 'imageDetails[0].imageDigest' \
+            --output text 2>/dev/null || echo "none")
+
+          echo "new_digest=${NEW_DIGEST}" >> "$GITHUB_OUTPUT"
+          echo "current_digest=${CURRENT_DIGEST}" >> "$GITHUB_OUTPUT"
+
+          if [[ "$NEW_DIGEST" == "$CURRENT_DIGEST" ]]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Image unchanged (${NEW_DIGEST}), skipping deploy."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Image changed: ${CURRENT_DIGEST} → ${NEW_DIGEST}"
+          fi
+
       - name: Update ECS task definition
+        if: steps.check.outputs.changed == 'true'
         id: task-def
         run: |
           # Fetch current task definition
@@ -94,7 +150,7 @@ jobs:
 
           # Update the image in the container definition
           NEW_TASK_DEF=$(echo "$TASK_DEF" | jq \
-            --arg IMAGE "${{ steps.build.outputs.image }}" \
+            --arg IMAGE "${{ steps.tag.outputs.image }}" \
             --arg CONTAINER "${{ env.CONTAINER_NAME }}" \
             '.containerDefinitions |= map(if .name == $CONTAINER then .image = $IMAGE else . end)')
 
@@ -119,6 +175,7 @@ jobs:
           echo "Registered task definition: ${NEW_ARN}"
 
       - name: Deploy to ECS
+        if: steps.check.outputs.changed == 'true'
         run: |
           aws ecs update-service \
             --cluster ${{ env.ECS_CLUSTER }} \
@@ -127,6 +184,7 @@ jobs:
             --force-new-deployment
 
       - name: Wait for deployment
+        if: steps.check.outputs.changed == 'true'
         run: |
           echo "Waiting for ECS service to stabilize..."
           aws ecs wait services-stable \
@@ -136,11 +194,15 @@ jobs:
 
       - name: Summary
         run: |
-          echo "### Deployment successful :rocket:" >> "$GITHUB_STEP_SUMMARY"
+          if [[ "${{ steps.check.outputs.changed }}" == "true" ]]; then
+            echo "### Deployment successful :rocket:" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### Image unchanged — deploy skipped :white_check_mark:" >> "$GITHUB_STEP_SUMMARY"
+          fi
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "| Detail | Value |" >> "$GITHUB_STEP_SUMMARY"
           echo "|--------|-------|" >> "$GITHUB_STEP_SUMMARY"
-          echo "| **Image** | \`${{ steps.build.outputs.image }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **Image** | \`${{ steps.tag.outputs.image }}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| **Base** | \`${{ steps.base.outputs.image }}\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| **Task Def** | \`${{ steps.task-def.outputs.arn }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **Deployed** | \`${{ steps.check.outputs.changed }}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| **Commit** | \`${{ github.sha }}\` |" >> "$GITHUB_STEP_SUMMARY"
