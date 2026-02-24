@@ -24,6 +24,7 @@ services:
       context: .
       args:
         BASE_IMAGE: openclaw:local
+    image: openclaw-src:local
     env_file:
       - openclaw/.env
     environment:
@@ -53,6 +54,7 @@ services:
       context: .
       args:
         BASE_IMAGE: openclaw:local
+    image: openclaw-src:local
     env_file:
       - openclaw/.env
     environment:
@@ -79,7 +81,7 @@ services:
       context: .
       args:
         BASE_IMAGE: openclaw:local
-    env_file:
+    image: openclaw-src:local
       - openclaw/.env
     environment:
       HOME: /home/node
