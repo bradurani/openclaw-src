@@ -130,6 +130,10 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Smoke test image
+        run: |
+          docker run --rm "${{ steps.tags.outputs.image }}" openclaw status
+
       - name: Summary
         run: |
           echo "### Image pushed :rocket:" >> "$GITHUB_STEP_SUMMARY"
