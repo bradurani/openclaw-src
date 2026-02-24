@@ -41,7 +41,7 @@ COPY --chown=node:node openclaw/completions/    /home/node/src/openclaw/completi
 COPY --chown=node:node openclaw/extensions/     /home/node/src/openclaw/extensions/
 
 # Install dependencies for custom extensions (memory-pgvector)
-RUN cd /home/node/.openclaw/extensions/memory-pgvector && npm install --omit=dev
+RUN cd /home/node/src/openclaw/extensions/memory-pgvector && npm install --omit=dev
 
 # Entrypoint script — merges image config with EFS persistent state on ECS.
 COPY --chown=node:node script/entrypoint.sh /usr/local/bin/entrypoint.sh
@@ -54,7 +54,8 @@ COPY --chown=node:node .bashrc /home/node/.bashrc
 RUN git config --system user.name "bradurani" \
     && git config --system user.email "bradurani@gmail.com"
 
-RUN chown -R node:node /home/node/.openclaw
+# Set ownership of the entire src directory to the node user, since some files are copied to the EFS int he entrypoint.
+RUN chown -R node:node /home/node/src/openclaw
 USER node
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

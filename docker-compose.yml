@@ -24,6 +24,7 @@ services:
       context: .
       args:
         BASE_IMAGE: openclaw:local
+    image: openclaw-src:local
     env_file:
       - openclaw/.env
     environment:
@@ -38,12 +39,15 @@ services:
         "node",
         "openclaw.mjs",
         "gateway",
+        "run",
         "--allow-unconfigured",
         "--bind",
         "lan",
         "--port",
         "18789",
       ]
+    volumes:
+      - ~/.openclaw:/home/node/.openclaw
 
   # --------------------------------------------------------------------------
   # OpenClaw CLI (interactive, run with: docker compose run --rm openclaw-cli)
@@ -53,18 +57,22 @@ services:
       context: .
       args:
         BASE_IMAGE: openclaw:local
+    image: openclaw-src:local
     env_file:
       - openclaw/.env
     environment:
+      OPENCLAW_GATEWAY_URL: http://openclaw-gateway:18789
       HOME: /home/node
       TERM: xterm-256color
       BROWSER: echo
+    depends_on:
+      - openclaw-gateway
     stdin_open: true
     tty: true
     init: true
     profiles:
       - cli
-    entrypoint: ["node", "openclaw.mjs"]
+    # entrypoint: ["node", "openclaw.mjs"]
 
   # --------------------------------------------------------------------------
   # Remote CLI — run commands against the ECS gateway via WebSocket
@@ -79,15 +87,14 @@ services:
       context: .
       args:
         BASE_IMAGE: openclaw:local
+    image: openclaw-src:local
     env_file:
       - openclaw/.env
     environment:
       HOME: /home/node
       TERM: xterm-256color
       BROWSER: echo
-      OPENCLAW_GATEWAY_URL: ${OPENCLAW_GATEWAY_URL:?Set OPENCLAW_GATEWAY_URL to ws://<ecs-public-ip>:8080}
-    volumes:
-      - ~/.openclaw:/home/node/.openclaw
+      OPENCLAW_GATEWAY_URL: "wss://gateway.uranisoftware.com"
     stdin_open: true
     tty: true
     init: true
