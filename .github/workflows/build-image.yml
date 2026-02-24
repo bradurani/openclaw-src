@@ -1,0 +1,144 @@
+name: build-image
+
+on:
+  pull_request:
+    paths:
+      - 'Dockerfile'
+      - 'config/**'
+      - 'skills/**'
+      - 'openclaw/**'
+      - 'script/entrypoint.sh'
+      - '.github/workflows/build-image.yml'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
+    inputs:
+      base_image_tag:
+        description: "Base image tag override (e.g. v0.5.0). Leave blank to use latest."
+        required: false
+
+permissions:
+  id-token: write   # AWS OIDC
+  contents: read
+
+env:
+  AWS_REGION: us-west-2
+  ECR_BASE_REPO: openclaw
+  ECR_SRC_REPO: openclaw-src
+
+jobs:
+  build-and-push:
+    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute context hash
+        id: ctx
+        run: |
+          HASH=$(python3 - <<'PY'
+import hashlib, subprocess
+patterns = [
+    "Dockerfile",
+    "config/**",
+    "skills/**",
+    "openclaw/**",
+    "script/entrypoint.sh",
+    ".github/workflows/deploy.yml",
+    ".github/workflows/build-image.yml",
+]
+cmd = ["git", "ls-files", "--"] + patterns
+files = subprocess.check_output(cmd, text=True).splitlines()
+files = sorted(set(f for f in files if f))
+h = hashlib.sha256()
+for path in files:
+    h.update(path.encode("utf-8"))
+    h.update(b"\0")
+    with open(path, "rb") as f:
+        h.update(f.read())
+    h.update(b"\0")
+print(h.hexdigest())
+PY
+          )
+          echo "hash=${HASH}" >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Resolve base image
+        id: base
+        run: |
+          REGISTRY="${{ steps.ecr-login.outputs.registry }}"
+          REPO="${{ env.ECR_BASE_REPO }}"
+
+          if [[ -n "${{ github.event.inputs.base_image_tag }}" ]]; then
+            TAG="${{ github.event.inputs.base_image_tag }}"
+          else
+            # Find the latest tag by pushed date
+            TAG=$(aws ecr describe-images \
+              --repository-name "$REPO" \
+              --query 'sort_by(imageDetails,& imagePushedAt)[-1].imageTags[0]' \
+              --output text)
+          fi
+
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "image=${REGISTRY}/${REPO}:${TAG}" >> "$GITHUB_OUTPUT"
+          echo "Using base image: ${REGISTRY}/${REPO}:${TAG}"
+
+      - name: Compute image tags
+        id: tags
+        run: |
+          REGISTRY="${{ steps.ecr-login.outputs.registry }}"
+          SHA="${{ github.sha }}"
+          SHORT_SHA="${SHA:0:7}"
+          CTX_TAG="ctx-${{ steps.ctx.outputs.hash }}"
+
+          echo "short=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "ctx=${CTX_TAG}" >> "$GITHUB_OUTPUT"
+          echo "image=${REGISTRY}/${{ env.ECR_SRC_REPO }}:${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "ctx_image=${REGISTRY}/${{ env.ECR_SRC_REPO }}:${CTX_TAG}" >> "$GITHUB_OUTPUT"
+
+          TAGS="${REGISTRY}/${{ env.ECR_SRC_REPO }}:${SHORT_SHA}\n${REGISTRY}/${{ env.ECR_SRC_REPO }}:${CTX_TAG}"
+
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            PR_TAG="pr-${{ github.event.pull_request.number }}-${SHORT_SHA}"
+            echo "pr_tag=${PR_TAG}" >> "$GITHUB_OUTPUT"
+            TAGS="${TAGS}\n${REGISTRY}/${{ env.ECR_SRC_REPO }}:${PR_TAG}"
+          fi
+
+          echo "tags<<EOF" >> "$GITHUB_OUTPUT"
+          echo -e "$TAGS" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          build-args: BASE_IMAGE=${{ steps.base.outputs.image }}
+          tags: ${{ steps.tags.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Summary
+        run: |
+          echo "### Image pushed :rocket:" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Detail | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|--------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **Image** | \`${{ steps.tags.outputs.image }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **Context Tag** | \`${{ steps.tags.outputs.ctx_image }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **Base** | \`${{ steps.base.outputs.image }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          if [[ -n "${{ steps.tags.outputs.pr_tag }}" ]]; then
+            echo "| **PR Tag** | \`${{ steps.ecr-login.outputs.registry }}/${{ env.ECR_SRC_REPO }}:${{ steps.tags.outputs.pr_tag }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          fi
