@@ -72,8 +72,43 @@ jobs:
         id: ecr-login
         uses: aws-actions/amazon-ecr-login@v2
 
+      - name: Compute image tags
+        id: tags
+        run: |
+          REGISTRY="${{ steps.ecr-login.outputs.registry }}"
+          SHA="${{ github.sha }}"
+          SHORT_SHA="${SHA:0:7}"
+          CTX_TAG="ctx-${{ steps.ctx.outputs.hash }}"
+
+          echo "short=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "ctx=${CTX_TAG}" >> "$GITHUB_OUTPUT"
+          echo "image=${REGISTRY}/${{ env.ECR_SRC_REPO }}:${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "ctx_image=${REGISTRY}/${{ env.ECR_SRC_REPO }}:${CTX_TAG}" >> "$GITHUB_OUTPUT"
+
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            PR_TAG="pr-${{ github.event.pull_request.number }}-${SHORT_SHA}"
+            echo "pr_tag=${PR_TAG}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check if context image already exists
+        id: image-exists
+        run: |
+          set +e
+          aws ecr describe-images \
+            --repository-name "${{ env.ECR_SRC_REPO }}" \
+            --image-ids imageTag="${{ steps.tags.outputs.ctx }}" \
+            --query 'imageDetails[0].imageDigest' \
+            --output text >/dev/null 2>&1
+          if [ $? -eq 0 ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+          set -e
+
       - name: Resolve base image
         id: base
+        if: steps.image-exists.outputs.exists != 'true'
         run: |
           REGISTRY="${{ steps.ecr-login.outputs.registry }}"
           REPO="${{ env.ECR_BASE_REPO }}"
@@ -92,42 +127,19 @@ jobs:
           echo "image=${REGISTRY}/${REPO}:${TAG}" >> "$GITHUB_OUTPUT"
           echo "Using base image: ${REGISTRY}/${REPO}:${TAG}"
 
-      - name: Compute image tags
-        id: tags
-        run: |
-          REGISTRY="${{ steps.ecr-login.outputs.registry }}"
-          SHA="${{ github.sha }}"
-          SHORT_SHA="${SHA:0:7}"
-          CTX_TAG="ctx-${{ steps.ctx.outputs.hash }}"
-
-          echo "short=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
-          echo "ctx=${CTX_TAG}" >> "$GITHUB_OUTPUT"
-          echo "image=${REGISTRY}/${{ env.ECR_SRC_REPO }}:${SHORT_SHA}" >> "$GITHUB_OUTPUT"
-          echo "ctx_image=${REGISTRY}/${{ env.ECR_SRC_REPO }}:${CTX_TAG}" >> "$GITHUB_OUTPUT"
-
-          TAGS="${REGISTRY}/${{ env.ECR_SRC_REPO }}:${SHORT_SHA}\n${REGISTRY}/${{ env.ECR_SRC_REPO }}:${CTX_TAG}"
-
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            PR_TAG="pr-${{ github.event.pull_request.number }}-${SHORT_SHA}"
-            echo "pr_tag=${PR_TAG}" >> "$GITHUB_OUTPUT"
-            TAGS="${TAGS}\n${REGISTRY}/${{ env.ECR_SRC_REPO }}:${PR_TAG}"
-          fi
-
-          echo "tags<<EOF" >> "$GITHUB_OUTPUT"
-          echo -e "$TAGS" >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
-
       - name: Set up Docker Buildx
+        if: steps.image-exists.outputs.exists != 'true'
         uses: docker/setup-buildx-action@v3
 
       - name: Build image
+        if: steps.image-exists.outputs.exists != 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
           push: false
           load: true
           build-args: BASE_IMAGE=${{ steps.base.outputs.image }}
-          tags: ${{ steps.tags.outputs.tags }}
+          tags: ${{ steps.tags.outputs.ctx_image }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -135,23 +147,44 @@ jobs:
       #   run: |
       #     docker run --rm "${{ steps.tags.outputs.image }}" openclaw status
 
-      - name: Push image tags
+      - name: Push context image
+        if: steps.image-exists.outputs.exists != 'true'
         run: |
-          while IFS= read -r tag; do
-            [ -n "$tag" ] || continue
-            echo "Pushing $tag"
-            docker push "$tag"
-          done <<< "${{ steps.tags.outputs.tags }}"
+          docker push "${{ steps.tags.outputs.ctx_image }}"
+
+      - name: Tag image in ECR
+        run: |
+          MANIFEST=$(aws ecr batch-get-image \
+            --repository-name "${{ env.ECR_SRC_REPO }}" \
+            --image-ids imageTag="${{ steps.tags.outputs.ctx }}" \
+            --query 'images[0].imageManifest' \
+            --output text)
+
+          aws ecr put-image \
+            --repository-name "${{ env.ECR_SRC_REPO }}" \
+            --image-tag "${{ steps.tags.outputs.short }}" \
+            --image-manifest "$MANIFEST"
+
+          if [[ -n "${{ steps.tags.outputs.pr_tag }}" ]]; then
+            aws ecr put-image \
+              --repository-name "${{ env.ECR_SRC_REPO }}" \
+              --image-tag "${{ steps.tags.outputs.pr_tag }}" \
+              --image-manifest "$MANIFEST"
+          fi
 
       - name: Summary
         run: |
+          BASE_IMAGE="${{ steps.base.outputs.image }}"
+          if [[ -z "$BASE_IMAGE" ]]; then
+            BASE_IMAGE="(reused existing context image)"
+          fi
           echo "### Image pushed :rocket:" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "| Detail | Value |" >> "$GITHUB_STEP_SUMMARY"
           echo "|--------|-------|" >> "$GITHUB_STEP_SUMMARY"
           echo "| **Image** | \`${{ steps.tags.outputs.image }}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| **Context Tag** | \`${{ steps.tags.outputs.ctx_image }}\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| **Base** | \`${{ steps.base.outputs.image }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **Base** | \`${BASE_IMAGE}\` |" >> "$GITHUB_STEP_SUMMARY"
           if [[ -n "${{ steps.tags.outputs.pr_tag }}" ]]; then
             echo "| **PR Tag** | \`${{ steps.ecr-login.outputs.registry }}/${{ env.ECR_SRC_REPO }}:${{ steps.tags.outputs.pr_tag }}\` |" >> "$GITHUB_STEP_SUMMARY"
           fi
