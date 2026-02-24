@@ -44,39 +44,17 @@ if [ -d "/home/node/src/openclaw/completions" ]; then
   cp -r /home/node/src/openclaw/completions "$OPENCLAW_DIR/"
 fi
 
-# Extensions are baked into the image under /home/node/src/openclaw/extensions.
-# Do NOT copy them into the persistent state dir ($OPENCLAW_DIR/extensions), otherwise
-# they are treated as untracked local code and can trigger plugin provenance warnings.
-#
-# Instead, for baked-in plugins we want to use *tracked installs* so OpenClaw records
-# provenance under plugins.installs. The install target here is a local directory
-# in the image (not the npm registry).
-
-# Ensure memory-pgvector is installed (tracked) into the persistent state dir.
-# This is idempotent: if an install record already exists, we skip.
-if [ -d "/home/node/src/openclaw/extensions/memory-pgvector" ]; then
-  PLUGIN_STATE_DIR="$OPENCLAW_DIR/extensions/memory-pgvector"
-  INSTALLED=$(node - <<'NODE'
-const fs = require('fs');
-try {
-  const p = process.env.HOME + '/.openclaw/openclaw.json';
-  const j = JSON.parse(fs.readFileSync(p, 'utf8'));
-  const ok = !!(j.plugins && j.plugins.installs && j.plugins.installs['memory-pgvector']);
-  process.stdout.write(ok ? '1' : '0');
-} catch {
-  process.stdout.write('0');
-}
-NODE
-)
-
-  if [ "$INSTALLED" != "1" ]; then
-    if [ -d "$PLUGIN_STATE_DIR" ]; then
-      echo "entrypoint: plugin dir already exists at $PLUGIN_STATE_DIR; skipping tracked install"
-    else
-      echo "entrypoint: installing tracked plugin memory-pgvector into state dir"
-      node openclaw.mjs plugins install /home/node/src/openclaw/extensions/memory-pgvector
+# Copy each subfolder from /home/node/src/openclaw/extensions to $OPENCLAW_DIR/extensions
+if [ -d "/home/node/src/openclaw/extensions" ]; then
+  mkdir -p "$OPENCLAW_DIR/extensions"
+  for ext_dir in /home/node/src/openclaw/extensions/*/; do
+    if [ -d "$ext_dir" ]; then
+      ext_name=$(basename "$ext_dir")
+      echo "entrypoint: copying extension $ext_name to $OPENCLAW_DIR/extensions/"
+      rm -rf "$OPENCLAW_DIR/extensions/$ext_name"
+      cp -r "$ext_dir" "$OPENCLAW_DIR/extensions/$ext_name"
     fi
-  fi
+  done
 fi
 
 # Map secrets to the env vars openclaw expects
