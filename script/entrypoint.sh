@@ -47,8 +47,32 @@ fi
 # Extensions are baked into the image under /home/node/src/openclaw/extensions.
 # Do NOT copy them into the persistent state dir ($OPENCLAW_DIR/extensions), otherwise
 # they are treated as untracked local code and can trigger plugin provenance warnings.
-# If you need to develop/test custom plugins, use `openclaw plugins install` (tracked)
-# or set `plugins.load.paths` explicitly.
+#
+# Instead, for baked-in plugins we want to use *tracked installs* so OpenClaw records
+# provenance under plugins.installs. The install target here is a local directory
+# in the image (not the npm registry).
+
+# Ensure memory-pgvector is installed (tracked) into the persistent state dir.
+# This is idempotent: if an install record already exists, we skip.
+if [ -d "/home/node/src/openclaw/extensions/memory-pgvector" ]; then
+  INSTALLED=$(node - <<'NODE'
+const fs = require('fs');
+try {
+  const p = process.env.HOME + '/.openclaw/openclaw.json';
+  const j = JSON.parse(fs.readFileSync(p, 'utf8'));
+  const ok = !!(j.plugins && j.plugins.installs && j.plugins.installs['memory-pgvector']);
+  process.stdout.write(ok ? '1' : '0');
+} catch {
+  process.stdout.write('0');
+}
+NODE
+)
+
+  if [ "$INSTALLED" != "1" ]; then
+    echo "entrypoint: installing tracked plugin memory-pgvector into state dir"
+    node openclaw.mjs plugins install /home/node/src/openclaw/extensions/memory-pgvector
+  fi
+fi
 
 # Map secrets to the env vars openclaw expects
 export CHANNELS__SLACK__TOKEN="${CHANNELS__SLACK__TOKEN:-$SLACK_BOT_TOKEN}"
