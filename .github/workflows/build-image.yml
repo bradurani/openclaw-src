@@ -58,7 +58,7 @@ jobs:
                   h.update(f.read())
               h.update(b"\0")
           print(h.hexdigest())
-PY
+          PY
           )
           echo "hash=${HASH}" >> "$GITHUB_OUTPUT"
 
