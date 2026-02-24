@@ -10,6 +10,7 @@ set -e
 
 CLUSTER="openclaw"
 CONTAINER="openclaw"
+RUN_AS_USER="node"
 REGION="${AWS_REGION:-us-west-2}"
 COMMAND="${1:-/bin/sh}"
 shift 2>/dev/null || true
@@ -26,7 +27,13 @@ if [ "$TASK_ARN" = "None" ] || [ -z "$TASK_ARN" ]; then
   exit 1
 fi
 
-echo "Connecting to $TASK_ARN ..."
+echo "Connecting to $TASK_ARN as ${RUN_AS_USER} ..."
+
+if [ "$COMMAND" = "/bin/bash" ] && [ "$#" -eq 0 ]; then
+  EXEC_COMMAND="su -s /bin/bash ${RUN_AS_USER}"
+else
+  EXEC_COMMAND="su -s /bin/bash ${RUN_AS_USER} -c \"$COMMAND $*\""
+fi
 
 exec env AWS_PROFILE="${AWS_PROFILE:-openclaw-dev}" aws ecs execute-command \
   --cluster "$CLUSTER" \
@@ -34,4 +41,4 @@ exec env AWS_PROFILE="${AWS_PROFILE:-openclaw-dev}" aws ecs execute-command \
   --container "$CONTAINER" \
   --region "$REGION" \
   --interactive \
-  --command "$COMMAND $*"
+  --command "$EXEC_COMMAND"
