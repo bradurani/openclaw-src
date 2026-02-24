@@ -55,6 +55,7 @@ fi
 # Ensure memory-pgvector is installed (tracked) into the persistent state dir.
 # This is idempotent: if an install record already exists, we skip.
 if [ -d "/home/node/src/openclaw/extensions/memory-pgvector" ]; then
+  PLUGIN_STATE_DIR="$OPENCLAW_DIR/extensions/memory-pgvector"
   INSTALLED=$(node - <<'NODE'
 const fs = require('fs');
 try {
@@ -69,6 +70,10 @@ NODE
 )
 
   if [ "$INSTALLED" != "1" ]; then
+    if [ -d "$PLUGIN_STATE_DIR" ]; then
+      echo "entrypoint: removing stale plugin dir $PLUGIN_STATE_DIR before tracked install"
+      rm -rf "$PLUGIN_STATE_DIR"
+    fi
     echo "entrypoint: installing tracked plugin memory-pgvector into state dir"
     node openclaw.mjs plugins install /home/node/src/openclaw/extensions/memory-pgvector
   fi

@@ -71,7 +71,7 @@ services:
     init: true
     profiles:
       - cli
-    # entrypoint: ["openclaw"]
+    entrypoint: ["openclaw"]
 
   # --------------------------------------------------------------------------
   # Remote CLI — run commands against the ECS gateway via WebSocket
