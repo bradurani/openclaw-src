@@ -1,6 +1,6 @@
 # Base image is the upstream OpenClaw gateway, pre-built and pushed to ECR
 # by the build-base-image workflow.
-ARG BASE_IMAGE
+ARG BASE_IMAGE=728951607453.dkr.ecr.us-west-2.amazonaws.com/openclaw:latest
 FROM ${BASE_IMAGE}
 
 # ---------------------------------------------------------------------------
