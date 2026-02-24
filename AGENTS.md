@@ -5,6 +5,7 @@
 - **Never push directly to `main`.**
 - **Never merge pull requests.** Create PRs and leave them for the human to review and merge.
 - Always work on feature branches.
+- Before creating a new branch: `git checkout main` then `git pull --ff-only`.
 - Do not use `--admin` bypass on `gh pr merge`.
 - Do not reset code that has not been commited yet
 - Do not git stash changes that have not been commited yet
