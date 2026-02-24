@@ -36,6 +36,35 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Compute context hash
+        id: ctx
+        run: |
+          HASH=$(python3 - <<'PY'
+import hashlib, subprocess
+patterns = [
+    "Dockerfile",
+    "config/**",
+    "skills/**",
+    "openclaw/**",
+    "script/entrypoint.sh",
+    ".github/workflows/deploy.yml",
+    ".github/workflows/build-image.yml",
+]
+cmd = ["git", "ls-files", "--"] + patterns
+files = subprocess.check_output(cmd, text=True).splitlines()
+files = sorted(set(f for f in files if f))
+h = hashlib.sha256()
+for path in files:
+    h.update(path.encode("utf-8"))
+    h.update(b"\0")
+    with open(path, "rb") as f:
+        h.update(f.read())
+    h.update(b"\0")
+print(h.hexdigest())
+PY
+          )
+          echo "hash=${HASH}" >> "$GITHUB_OUTPUT"
+
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -52,17 +81,20 @@ jobs:
           REGISTRY="${{ steps.ecr-login.outputs.registry }}"
           SHA="${{ github.sha }}"
           SHORT_SHA="${SHA:0:7}"
+          CTX_TAG="ctx-${{ steps.ctx.outputs.hash }}"
 
           echo "short=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "ctx=${CTX_TAG}" >> "$GITHUB_OUTPUT"
           echo "image=${REGISTRY}/${{ env.ECR_SRC_REPO }}:${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "ctx_image=${REGISTRY}/${{ env.ECR_SRC_REPO }}:${CTX_TAG}" >> "$GITHUB_OUTPUT"
 
-      - name: Check if image already exists
+      - name: Check if context image already exists
         id: image-exists
         run: |
           set +e
           aws ecr describe-images \
             --repository-name "${{ env.ECR_SRC_REPO }}" \
-            --image-ids imageTag="${{ steps.tags.outputs.short }}" \
+            --image-ids imageTag="${{ steps.tags.outputs.ctx }}" \
             --query 'imageDetails[0].imageDigest' \
             --output text >/dev/null 2>&1
           if [ $? -eq 0 ]; then
@@ -71,6 +103,25 @@ jobs:
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
           set -e
+
+      - name: Re-tag existing context image
+        if: steps.image-exists.outputs.exists == 'true'
+        run: |
+          MANIFEST=$(aws ecr batch-get-image \
+            --repository-name "${{ env.ECR_SRC_REPO }}" \
+            --image-ids imageTag="${{ steps.tags.outputs.ctx }}" \
+            --query 'images[0].imageManifest' \
+            --output text)
+
+          aws ecr put-image \
+            --repository-name "${{ env.ECR_SRC_REPO }}" \
+            --image-tag "${{ steps.tags.outputs.short }}" \
+            --image-manifest "$MANIFEST"
+
+          aws ecr put-image \
+            --repository-name "${{ env.ECR_SRC_REPO }}" \
+            --image-tag "latest" \
+            --image-manifest "$MANIFEST"
 
       - name: Resolve base image
         id: base
@@ -106,7 +157,9 @@ jobs:
           push: false
           load: true
           build-args: BASE_IMAGE=${{ steps.base.outputs.image }}
-          tags: ${{ steps.tags.outputs.image }}
+          tags: |
+            ${{ steps.tags.outputs.image }}
+            ${{ steps.tags.outputs.ctx_image }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -114,6 +167,7 @@ jobs:
         if: steps.image-exists.outputs.exists != 'true'
         run: |
           docker push ${{ steps.tags.outputs.image }}
+          docker push ${{ steps.tags.outputs.ctx_image }}
 
           # Also tag as 'latest' so Terraform-managed task definitions can resolve
           LATEST="${{ steps.ecr-login.outputs.registry }}/${{ env.ECR_SRC_REPO }}:latest"
@@ -219,6 +273,7 @@ jobs:
           echo "| Detail | Value |" >> "$GITHUB_STEP_SUMMARY"
           echo "|--------|-------|" >> "$GITHUB_STEP_SUMMARY"
           echo "| **Image** | \`${{ steps.tags.outputs.image }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **Context Tag** | \`${{ steps.tags.outputs.ctx }}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| **Base** | \`${{ steps.base.outputs.image }}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| **Deployed** | \`${{ steps.check.outputs.changed }}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| **Commit** | \`${{ github.sha }}\` |" >> "$GITHUB_STEP_SUMMARY"

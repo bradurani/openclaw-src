@@ -33,6 +33,35 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Compute context hash
+        id: ctx
+        run: |
+          HASH=$(python3 - <<'PY'
+import hashlib, subprocess
+patterns = [
+    "Dockerfile",
+    "config/**",
+    "skills/**",
+    "openclaw/**",
+    "script/entrypoint.sh",
+    ".github/workflows/deploy.yml",
+    ".github/workflows/build-image.yml",
+]
+cmd = ["git", "ls-files", "--"] + patterns
+files = subprocess.check_output(cmd, text=True).splitlines()
+files = sorted(set(f for f in files if f))
+h = hashlib.sha256()
+for path in files:
+    h.update(path.encode("utf-8"))
+    h.update(b"\0")
+    with open(path, "rb") as f:
+        h.update(f.read())
+    h.update(b"\0")
+print(h.hexdigest())
+PY
+          )
+          echo "hash=${HASH}" >> "$GITHUB_OUTPUT"
+
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -69,10 +98,14 @@ jobs:
           REGISTRY="${{ steps.ecr-login.outputs.registry }}"
           SHA="${{ github.sha }}"
           SHORT_SHA="${SHA:0:7}"
+          CTX_TAG="ctx-${{ steps.ctx.outputs.hash }}"
 
           echo "short=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "ctx=${CTX_TAG}" >> "$GITHUB_OUTPUT"
           echo "image=${REGISTRY}/${{ env.ECR_SRC_REPO }}:${SHORT_SHA}" >> "$GITHUB_OUTPUT"
-          TAGS="${REGISTRY}/${{ env.ECR_SRC_REPO }}:${SHORT_SHA}"
+          echo "ctx_image=${REGISTRY}/${{ env.ECR_SRC_REPO }}:${CTX_TAG}" >> "$GITHUB_OUTPUT"
+
+          TAGS="${REGISTRY}/${{ env.ECR_SRC_REPO }}:${SHORT_SHA}\n${REGISTRY}/${{ env.ECR_SRC_REPO }}:${CTX_TAG}"
 
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             PR_TAG="pr-${{ github.event.pull_request.number }}-${SHORT_SHA}"
@@ -104,6 +137,7 @@ jobs:
           echo "| Detail | Value |" >> "$GITHUB_STEP_SUMMARY"
           echo "|--------|-------|" >> "$GITHUB_STEP_SUMMARY"
           echo "| **Image** | \`${{ steps.tags.outputs.image }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **Context Tag** | \`${{ steps.tags.outputs.ctx_image }}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| **Base** | \`${{ steps.base.outputs.image }}\` |" >> "$GITHUB_STEP_SUMMARY"
           if [[ -n "${{ steps.tags.outputs.pr_tag }}" ]]; then
             echo "| **PR Tag** | \`${{ steps.ecr-login.outputs.registry }}/${{ env.ECR_SRC_REPO }}:${{ steps.tags.outputs.pr_tag }}\` |" >> "$GITHUB_STEP_SUMMARY"
