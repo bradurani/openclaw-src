@@ -7,16 +7,17 @@ fi
 # ecs-exec — Interactive shell into the running OpenClaw ECS container
 #
 # Usage: script/ecs-exec [command]
-#   script/ecs-exec              # /bin/sh
-#   script/ecs-exec /bin/bash    # bash (if available)
+#   script/ecs-exec              # /bin/bash (as node)
+#   script/ecs-exec /bin/sh      # sh (if available, as node)
 #   script/ecs-exec node openclaw.mjs health --json
 
 set -e
 
 CLUSTER="openclaw"
 CONTAINER="openclaw"
+RUN_AS_USER="node"
 REGION="${AWS_REGION:-us-west-2}"
-COMMAND="${1:-/bin/sh}"
+COMMAND="${1:-/bin/bash}"
 shift 2>/dev/null || true
 
 TASK_ARN=$(AWS_PROFILE="${AWS_PROFILE:-openclaw-dev}" aws ecs list-tasks \
@@ -31,7 +32,13 @@ if [ "$TASK_ARN" = "None" ] || [ -z "$TASK_ARN" ]; then
   exit 1
 fi
 
-echo "Connecting to $TASK_ARN ..."
+echo "Connecting to $TASK_ARN as ${RUN_AS_USER} ..."
+
+if [ "$COMMAND" = "/bin/bash" ] && [ "$#" -eq 0 ]; then
+  EXEC_COMMAND="su -s /bin/bash ${RUN_AS_USER}"
+else
+  EXEC_COMMAND="su -s /bin/bash ${RUN_AS_USER} -c \"$COMMAND $*\""
+fi
 
 exec env AWS_PROFILE="${AWS_PROFILE:-openclaw-dev}" aws ecs execute-command \
   --cluster "$CLUSTER" \
@@ -39,4 +46,4 @@ exec env AWS_PROFILE="${AWS_PROFILE:-openclaw-dev}" aws ecs execute-command \
   --container "$CONTAINER" \
   --region "$REGION" \
   --interactive \
-  --command "$COMMAND $*"
+  --command "$EXEC_COMMAND"
