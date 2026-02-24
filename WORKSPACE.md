@@ -2,6 +2,10 @@
 
 Configuration, agents, hooks, skills, and workspace files that customize our OpenClaw instance. These files are included in the Docker container built by `openclaw-tf`.
 
+## Instruction Sources
+
+- This repo’s `AGENTS.md` and `WORKSPACE.md` are the authoritative, versioned instructions for agents working in `openclaw-src`.
+
 ## Workflow Rules
 
 1. **Never push directly to `main`.** This repo has a branch protection ruleset that requires pull requests. Always create a feature branch, open a PR, and ask Brad for review before merging. No exceptions — even for "quick fixes." If a deploy is broken, the fix still goes through a PR.
