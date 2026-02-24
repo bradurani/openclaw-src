@@ -1,4 +1,9 @@
 #!/bin/sh
+
+# Load app secrets for local scripts (skip with OPENCLAW_SKIP_FETCH_ENV=1)
+if [ -z "${OPENCLAW_SKIP_FETCH_ENV:-}" ] && [ -x "script/fetch-env" ]; then
+  eval "$(script/fetch-env)"
+fi
 # entrypoint.sh — Merge image config with EFS persistent state
 #
 # On ECS the EFS volume is mounted at /data. This script symlinks runtime state

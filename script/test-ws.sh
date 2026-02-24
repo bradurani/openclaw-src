@@ -1,4 +1,9 @@
 #!/bin/bash
+
+# Load app secrets for local scripts (skip with OPENCLAW_SKIP_FETCH_ENV=1)
+if [ -z "${OPENCLAW_SKIP_FETCH_ENV:-}" ] && [ -x "script/fetch-env" ]; then
+  eval "$(script/fetch-env)"
+fi
 # Test a websocket connection to the local openclaw-gateway
 
 GATEWAY_URL="ws://localhost:18789"
