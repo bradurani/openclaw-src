@@ -46,8 +46,35 @@ jobs:
         id: ecr-login
         uses: aws-actions/amazon-ecr-login@v2
 
+      - name: Compute image tags
+        id: tags
+        run: |
+          REGISTRY="${{ steps.ecr-login.outputs.registry }}"
+          SHA="${{ github.sha }}"
+          SHORT_SHA="${SHA:0:7}"
+
+          echo "short=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "image=${REGISTRY}/${{ env.ECR_SRC_REPO }}:${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Check if image already exists
+        id: image-exists
+        run: |
+          set +e
+          aws ecr describe-images \
+            --repository-name "${{ env.ECR_SRC_REPO }}" \
+            --image-ids imageTag="${{ steps.tags.outputs.short }}" \
+            --query 'imageDetails[0].imageDigest' \
+            --output text >/dev/null 2>&1
+          if [ $? -eq 0 ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+          set -e
+
       - name: Resolve base image
         id: base
+        if: steps.image-exists.outputs.exists != 'true'
         run: |
           REGISTRY="${{ steps.ecr-login.outputs.registry }}"
           REPO="${{ env.ECR_BASE_REPO }}"
@@ -67,41 +94,30 @@ jobs:
           echo "Using base image: ${REGISTRY}/${REPO}:${TAG}"
 
       - name: Set up Docker Buildx
+        if: steps.image-exists.outputs.exists != 'true'
         uses: docker/setup-buildx-action@v3
 
       - name: Build derived image
         id: build
+        if: steps.image-exists.outputs.exists != 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
           push: false
           load: true
           build-args: BASE_IMAGE=${{ steps.base.outputs.image }}
-          tags: ${{ steps.ecr-login.outputs.registry }}/${{ env.ECR_SRC_REPO }}:${{ github.sha }}
+          tags: ${{ steps.tags.outputs.image }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Tag image
-        id: tag
-        run: |
-          REGISTRY="${{ steps.ecr-login.outputs.registry }}"
-          SHA="${{ github.sha }}"
-          SHORT_SHA="${SHA:0:7}"
-          FULL_TAG="${REGISTRY}/${{ env.ECR_SRC_REPO }}:${SHA}"
-          SHORT_TAG="${REGISTRY}/${{ env.ECR_SRC_REPO }}:${SHORT_SHA}"
-
-          docker tag "${FULL_TAG}" "${SHORT_TAG}"
-
-          echo "image=${SHORT_TAG}" >> "$GITHUB_OUTPUT"
-          echo "tag=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
-
       - name: Push to ECR
+        if: steps.image-exists.outputs.exists != 'true'
         run: |
-          docker push ${{ steps.tag.outputs.image }}
+          docker push ${{ steps.tags.outputs.image }}
 
           # Also tag as 'latest' so Terraform-managed task definitions can resolve
           LATEST="${{ steps.ecr-login.outputs.registry }}/${{ env.ECR_SRC_REPO }}:latest"
-          docker tag ${{ steps.tag.outputs.image }} "${LATEST}"
+          docker tag ${{ steps.tags.outputs.image }} "${LATEST}"
           docker push "${LATEST}"
 
       - name: Check if image changed
@@ -116,7 +132,7 @@ jobs:
           # Get the digest of the just-pushed image
           NEW_DIGEST=$(aws ecr describe-images \
             --repository-name ${{ env.ECR_SRC_REPO }} \
-            --image-ids imageTag=${{ steps.tag.outputs.tag }} \
+            --image-ids imageTag=${{ steps.tags.outputs.short }} \
             --query 'imageDetails[0].imageDigest' \
             --output text)
 
@@ -150,7 +166,7 @@ jobs:
 
           # Update the image in the container definition
           NEW_TASK_DEF=$(echo "$TASK_DEF" | jq \
-            --arg IMAGE "${{ steps.tag.outputs.image }}" \
+            --arg IMAGE "${{ steps.tags.outputs.image }}" \
             --arg CONTAINER "${{ env.CONTAINER_NAME }}" \
             '.containerDefinitions |= map(if .name == $CONTAINER then .image = $IMAGE else . end)')
 
@@ -202,7 +218,7 @@ jobs:
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "| Detail | Value |" >> "$GITHUB_STEP_SUMMARY"
           echo "|--------|-------|" >> "$GITHUB_STEP_SUMMARY"
-          echo "| **Image** | \`${{ steps.tag.outputs.image }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **Image** | \`${{ steps.tags.outputs.image }}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| **Base** | \`${{ steps.base.outputs.image }}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| **Deployed** | \`${{ steps.check.outputs.changed }}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| **Commit** | \`${{ github.sha }}\` |" >> "$GITHUB_STEP_SUMMARY"
