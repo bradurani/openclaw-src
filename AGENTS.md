@@ -19,3 +19,10 @@
 
 - Never log, print, or echo secrets, tokens, or passwords.
 - Secrets are injected via AWS Secrets Manager at container launch — do not hardcode them.
+
+## Tooling (Available to Agent)
+
+- GitHub CLI: `gh` for PRs, workflow runs, and repo metadata.
+- AWS CLI (read-only unless explicitly approved): `aws` for ECS/ECR/Logs/ELB inspection.
+- Docker CLI: `docker` and `docker compose` for local workflows.
+- Terraform CLI: `terraform` for validate/plan only (apply happens in CI).
