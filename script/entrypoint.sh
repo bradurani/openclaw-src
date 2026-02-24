@@ -4,6 +4,8 @@
 # On ECS the EFS volume is mounted at /data. This script symlinks runtime state
 # directories from ~/.openclaw into /data so they persist across deploys.
 # Locally (no /data mount) everything stays in ~/.openclaw as-is.
+#
+# NOTE: Changes to this file trigger a deploy via CI.
 
 set -e
 
@@ -19,6 +21,11 @@ if [ -d "$EFS_DIR" ] && mountpoint -q "$EFS_DIR" 2>/dev/null; then
 
   # Create .openclaw directory on EFS if it doesn't exist
   mkdir -p "$EFS_OPENCLAW_DIR"
+  # Ensure strict permissions on the state dir
+  if [ "$(id -u)" = "0" ]; then
+    chown node:node "$EFS_OPENCLAW_DIR"
+  fi
+  chmod 700 "$EFS_OPENCLAW_DIR" 2>/dev/null || true
   # Remove the baked-in .openclaw directory from the image
   rm -rf "$OPENCLAW_DIR"
 
@@ -53,7 +60,6 @@ fi
 export CHANNELS__SLACK__TOKEN="${CHANNELS__SLACK__TOKEN:-$SLACK_BOT_TOKEN}"
 export OPENAI_DEFAULT_MODEL="openai/gpt-5.2"
 export OPENAI_CODING_MODEL="openai/gpt-5.1-codex"
-# Ensure the openclaw directory has secure permissions
-# chmod 700 "$OPENCLAW_DIR"
+
 # Hand off to the original CMD
 exec "$@"
