@@ -44,18 +44,11 @@ if [ -d "/home/node/src/openclaw/completions" ]; then
   cp -r /home/node/src/openclaw/completions "$OPENCLAW_DIR/"
 fi
 
-# Copy each subfolder from /home/node/src/openclaw/extensions to $OPENCLAW_DIR/extensions
-if [ -d "/home/node/src/openclaw/extensions" ]; then
-  mkdir -p "$OPENCLAW_DIR/extensions"
-  for ext_dir in /home/node/src/openclaw/extensions/*/; do
-    if [ -d "$ext_dir" ]; then
-      ext_name=$(basename "$ext_dir")
-      echo "entrypoint: copying extension $ext_name to $OPENCLAW_DIR/extensions/"
-      rm -rf "$OPENCLAW_DIR/extensions/$ext_name"
-      cp -r "$ext_dir" "$OPENCLAW_DIR/extensions/$ext_name"
-    fi
-  done
-fi
+# Extensions are baked into the image under /home/node/src/openclaw/extensions.
+# Do NOT copy them into the persistent state dir ($OPENCLAW_DIR/extensions), otherwise
+# they are treated as untracked local code and can trigger plugin provenance warnings.
+# If you need to develop/test custom plugins, use `openclaw plugins install` (tracked)
+# or set `plugins.load.paths` explicitly.
 
 # Map secrets to the env vars openclaw expects
 export CHANNELS__SLACK__TOKEN="${CHANNELS__SLACK__TOKEN:-$SLACK_BOT_TOKEN}"
