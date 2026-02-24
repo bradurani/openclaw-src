@@ -3,23 +3,18 @@
 set -e
 
 IMAGE_NAME=openclaw-src:local
-COMPOSE_FILE=../docker-compose.yml
+COMPOSE_FILE="docker-compose.yml"
 
 # Build the gateway image
-cd ..
-echo "Building Docker image: $IMAGE_NAME"
-docker build -t $IMAGE_NAME .
+cd $(dirname "$0")/..  # Ensure we're in the openclaw-src directory
+docker compose -f $COMPOSE_FILE build openclaw-gateway
 
 # Start the gateway container
 
 echo "Starting openclaw-gateway container..."
-docker compose -f $COMPOSE_FILE up -d openclaw-gateway
+docker compose -f $COMPOSE_FILE up -d --force-recreate openclaw-gateway
 
 # Run the local CLI container interactively
 
-echo "Running openclaw-cli container..."
-docker compose -f $COMPOSE_FILE run --rm openclaw-cli
-
-# Show status
-
-echo "Gateway and CLI containers are running."
+# echo "Running openclaw-cli container..."
+# docker compose -f $COMPOSE_FILE run --rm -it openclaw-cli tui
