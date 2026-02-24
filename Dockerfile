@@ -45,7 +45,9 @@ RUN cd /home/node/src/openclaw/extensions/memory-pgvector && npm install --omit=
 
 # Entrypoint script — merges image config with EFS persistent state on ECS.
 COPY --chown=node:node script/entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh \
+    && printf '%s\n' '#!/bin/sh' 'exec node /app/openclaw.mjs "$@"' > /usr/local/bin/openclaw \
+    && chmod +x /usr/local/bin/openclaw
 
 # Add .bashrc for node user
 COPY --chown=node:node .bashrc /home/node/.bashrc
@@ -61,4 +63,4 @@ USER node
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
 # Override default CMD to bind to LAN (required for ECS + API Gateway traffic)
-CMD ["node", "openclaw.mjs", "gateway", "--allow-unconfigured", "--bind", "lan"]
+CMD ["openclaw", "gateway", "--allow-unconfigured", "--bind", "lan"]

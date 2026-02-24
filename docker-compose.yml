@@ -36,8 +36,7 @@ services:
     restart: unless-stopped
     command:
       [
-        "node",
-        "openclaw.mjs",
+        "openclaw",
         "gateway",
         "run",
         "--allow-unconfigured",
@@ -72,7 +71,7 @@ services:
     init: true
     profiles:
       - cli
-    # entrypoint: ["node", "openclaw.mjs"]
+    # entrypoint: ["openclaw"]
 
   # --------------------------------------------------------------------------
   # Remote CLI — run commands against the ECS gateway via WebSocket
@@ -104,7 +103,7 @@ services:
       [
         "sh",
         "-c",
-        "if [ $$# -eq 0 ]; then exec node openclaw.mjs tui; else exec node openclaw.mjs \"$$@\"; fi",
+        "if [ $$# -eq 0 ]; then exec openclaw tui; else exec openclaw \"$$@\"; fi",
         "--",
       ]
 
@@ -122,4 +121,3 @@ services:
     profiles:
       - tools
     entrypoint: ["sh", "-c", "exec psql \"$$PGVECTOR_URL\" \"$$@\"", "--"]
-

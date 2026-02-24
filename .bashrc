@@ -7,7 +7,6 @@ export PS1="\u@\h:\w$ "
 alias ll='ls -alF'
 alias la='ls -A'
 alias l='ls -CF'
-alias openclaw='node /app/openclaw.mjs'
 
 # Enable bash completion if available
 if [ -f "$HOME/.openclaw/completions/openclaw.bash" ]; then

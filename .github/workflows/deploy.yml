@@ -132,24 +132,10 @@ jobs:
           fi
           set -e
 
-      - name: Re-tag existing context image
+      - name: Reuse existing context image
         if: steps.image-exists.outputs.exists == 'true'
         run: |
-          MANIFEST=$(aws ecr batch-get-image \
-            --repository-name "${{ env.ECR_SRC_REPO }}" \
-            --image-ids imageTag="${{ steps.tags.outputs.ctx }}" \
-            --query 'images[0].imageManifest' \
-            --output text)
-
-          aws ecr put-image \
-            --repository-name "${{ env.ECR_SRC_REPO }}" \
-            --image-tag "${{ steps.tags.outputs.short }}" \
-            --image-manifest "$MANIFEST"
-
-          aws ecr put-image \
-            --repository-name "${{ env.ECR_SRC_REPO }}" \
-            --image-tag "latest" \
-            --image-manifest "$MANIFEST"
+          echo "Context image already exists: ${{ steps.tags.outputs.ctx_image }}"
 
       - name: Resolve base image
         id: base
@@ -185,22 +171,14 @@ jobs:
           push: false
           load: true
           build-args: BASE_IMAGE=${{ steps.base.outputs.image }}
-          tags: |
-            ${{ steps.tags.outputs.image }}
-            ${{ steps.tags.outputs.ctx_image }}
+          tags: ${{ steps.tags.outputs.ctx_image }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Push to ECR
         if: steps.image-exists.outputs.exists != 'true'
         run: |
-          docker push ${{ steps.tags.outputs.image }}
           docker push ${{ steps.tags.outputs.ctx_image }}
-
-          # Also tag as 'latest' so Terraform-managed task definitions can resolve
-          LATEST="${{ steps.ecr-login.outputs.registry }}/${{ env.ECR_SRC_REPO }}:latest"
-          docker tag ${{ steps.tags.outputs.image }} "${LATEST}"
-          docker push "${LATEST}"
 
       - name: Check if image changed
         id: check
@@ -211,10 +189,10 @@ jobs:
             --query "taskDefinition.containerDefinitions[?name=='${{ env.CONTAINER_NAME }}'].image | [0]" \
             --output text)
 
-          # Get the digest of the just-pushed image
+          # Get the digest of the context image for this commit
           NEW_DIGEST=$(aws ecr describe-images \
             --repository-name ${{ env.ECR_SRC_REPO }} \
-            --image-ids imageTag=${{ steps.tags.outputs.short }} \
+            --image-ids imageTag=${{ steps.tags.outputs.ctx }} \
             --query 'imageDetails[0].imageDigest' \
             --output text)
 
@@ -236,6 +214,25 @@ jobs:
             echo "changed=true" >> "$GITHUB_OUTPUT"
             echo "Image changed: ${CURRENT_DIGEST} → ${NEW_DIGEST}"
           fi
+
+      - name: Tag image for deployment
+        if: steps.check.outputs.changed == 'true'
+        run: |
+          MANIFEST=$(aws ecr batch-get-image \
+            --repository-name "${{ env.ECR_SRC_REPO }}" \
+            --image-ids imageTag="${{ steps.tags.outputs.ctx }}" \
+            --query 'images[0].imageManifest' \
+            --output text)
+
+          aws ecr put-image \
+            --repository-name "${{ env.ECR_SRC_REPO }}" \
+            --image-tag "${{ steps.tags.outputs.short }}" \
+            --image-manifest "$MANIFEST"
+
+          aws ecr put-image \
+            --repository-name "${{ env.ECR_SRC_REPO }}" \
+            --image-tag "latest" \
+            --image-manifest "$MANIFEST"
 
       - name: Update ECS task definition
         if: steps.check.outputs.changed == 'true'
