@@ -71,11 +71,11 @@ NODE
 
   if [ "$INSTALLED" != "1" ]; then
     if [ -d "$PLUGIN_STATE_DIR" ]; then
-      echo "entrypoint: removing stale plugin dir $PLUGIN_STATE_DIR before tracked install"
-      rm -rf "$PLUGIN_STATE_DIR"
+      echo "entrypoint: plugin dir already exists at $PLUGIN_STATE_DIR; skipping tracked install"
+    else
+      echo "entrypoint: installing tracked plugin memory-pgvector into state dir"
+      node openclaw.mjs plugins install /home/node/src/openclaw/extensions/memory-pgvector
     fi
-    echo "entrypoint: installing tracked plugin memory-pgvector into state dir"
-    node openclaw.mjs plugins install /home/node/src/openclaw/extensions/memory-pgvector
   fi
 fi
 
