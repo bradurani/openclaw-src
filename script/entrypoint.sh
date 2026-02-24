@@ -4,6 +4,8 @@
 # On ECS the EFS volume is mounted at /data. This script symlinks runtime state
 # directories from ~/.openclaw into /data so they persist across deploys.
 # Locally (no /data mount) everything stays in ~/.openclaw as-is.
+#
+# NOTE: Changes to this file trigger a deploy via CI.
 
 set -e
 
