@@ -1,9 +1,14 @@
 #!/bin/sh
+
+# Load app secrets for local scripts (skip with OPENCLAW_SKIP_FETCH_ENV=1)
+if [ -z "${OPENCLAW_SKIP_FETCH_ENV:-}" ] && [ -x "script/fetch-env" ]; then
+  eval "$(script/fetch-env)"
+fi
 # ecs-exec — Interactive shell into the running OpenClaw ECS container
 #
 # Usage: script/ecs-exec [command]
-#   script/ecs-exec              # /bin/sh
-#   script/ecs-exec /bin/bash    # bash (if available)
+#   script/ecs-exec              # /bin/bash (as node)
+#   script/ecs-exec /bin/sh      # sh (if available, as node)
 #   script/ecs-exec node openclaw.mjs health --json
 
 set -e
@@ -12,7 +17,7 @@ CLUSTER="openclaw"
 CONTAINER="openclaw"
 RUN_AS_USER="node"
 REGION="${AWS_REGION:-us-west-2}"
-COMMAND="${1:-/bin/sh}"
+COMMAND="${1:-/bin/bash}"
 shift 2>/dev/null || true
 
 TASK_ARN=$(AWS_PROFILE="${AWS_PROFILE:-openclaw-dev}" aws ecs list-tasks \

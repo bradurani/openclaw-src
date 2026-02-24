@@ -1,4 +1,5 @@
 #!/bin/sh
+
 # entrypoint.sh — Merge image config with EFS persistent state
 #
 # On ECS the EFS volume is mounted at /data. This script symlinks runtime state
