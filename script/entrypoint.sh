@@ -71,6 +71,7 @@ load_runtime_secrets() {
   export CHANNELS__SLACK__TOKEN="${CHANNELS__SLACK__TOKEN:-$SLACK_BOT_TOKEN}"
   export OPENAI_DEFAULT_MODEL="${OPENAI_DEFAULT_MODEL:-openai/gpt-5.2}"
   export OPENAI_CODING_MODEL="${OPENAI_CODING_MODEL:-openai/gpt-5.1-codex}"
+  export OPENCLAW_SECRETS_LOADED="1"
 }
 
 on_reload() {
