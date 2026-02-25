@@ -48,7 +48,8 @@ RUN cd /home/node/src/openclaw/extensions/memory-pgvector && npm install --omit=
 
 # Entrypoint script — merges image config with EFS persistent state on ECS.
 COPY --chown=node:node script/entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh \
+COPY --chown=node:node script/load-secrets /usr/local/bin/load-secrets
+RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/load-secrets \
     && printf '%s\n' '#!/bin/sh' 'exec node /app/openclaw.mjs "$@"' > /usr/local/bin/openclaw \
     && chmod +x /usr/local/bin/openclaw
 
