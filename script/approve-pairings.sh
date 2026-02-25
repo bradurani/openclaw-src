@@ -1,9 +1,5 @@
 #!/usr/bin/env bash
 
-# Load app secrets for local scripts (skip with OPENCLAW_SKIP_FETCH_ENV=1)
-if [ -z "${OPENCLAW_SKIP_FETCH_ENV:-}" ] && [ -x "script/fetch-env" ]; then
-  eval "$(script/fetch-env)"
-fi
 set -euo pipefail
 
 # Approve pending OpenClaw DM pairing requests via ECS Exec.
