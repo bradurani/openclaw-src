@@ -8,7 +8,7 @@ on:
       - 'config/**'
       - 'skills/**'
       - 'openclaw/**'
-      - 'script/entrypoint.sh'
+      - 'script/**'
       - '.github/workflows/deploy.yml'
   workflow_dispatch:
     inputs:
@@ -74,7 +74,7 @@ jobs:
               "config/**",
               "skills/**",
               "openclaw/**",
-              "script/entrypoint.sh",
+              "script/**",
               ".github/workflows/deploy.yml",
               ".github/workflows/build-image.yml",
           ]
