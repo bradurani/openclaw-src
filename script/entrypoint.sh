@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# entrypoint.sh — Merge image config with EFS persistent state
+# entrypoint.sh - Merge image config with EFS persistent state
 #
 # On ECS the EFS volume is mounted at /data. This script symlinks runtime state
 # directories from ~/.openclaw into /data so they persist across deploys.
@@ -12,13 +12,16 @@ set -e
 
 OPENCLAW_DIR="${HOME}/.openclaw"
 EFS_DIR="${EFS_MOUNT_PATH:-/data}"
-
+LOAD_SECRETS_BIN="/usr/local/bin/load-secrets"
+RELOAD_REQUESTED=0
+SHUTDOWN_REQUESTED=0
+CHILD_PID=""
 
 # Symlink the entire .openclaw directory to EFS
 EFS_OPENCLAW_DIR="${EFS_DIR}/.openclaw"
 
 if [ -d "$EFS_DIR" ] && mountpoint -q "$EFS_DIR" 2>/dev/null; then
-  echo "entrypoint: EFS detected at $EFS_DIR — linking .openclaw directory"
+  echo "entrypoint: EFS detected at $EFS_DIR - linking .openclaw directory"
 
   # Create .openclaw directory on EFS if it doesn't exist
   mkdir -p "$EFS_OPENCLAW_DIR"
@@ -57,10 +60,59 @@ if [ -d "/home/node/src/openclaw/extensions" ]; then
   done
 fi
 
-# Map secrets to the env vars openclaw expects
-export CHANNELS__SLACK__TOKEN="${CHANNELS__SLACK__TOKEN:-$SLACK_BOT_TOKEN}"
-export OPENAI_DEFAULT_MODEL="openai/gpt-5.2"
-export OPENAI_CODING_MODEL="openai/gpt-5.1-codex"
+load_runtime_secrets() {
+  if [ -x "$LOAD_SECRETS_BIN" ]; then
+    # Evaluate export statements produced by load-secrets.
+    # shellcheck disable=SC1090
+    eval "$($LOAD_SECRETS_BIN --format shell)"
+  fi
 
-# Hand off to the original CMD
-exec "$@"
+  # Preserve existing compatibility mappings/defaults.
+  export CHANNELS__SLACK__TOKEN="${CHANNELS__SLACK__TOKEN:-$SLACK_BOT_TOKEN}"
+  export OPENAI_DEFAULT_MODEL="${OPENAI_DEFAULT_MODEL:-openai/gpt-5.2}"
+  export OPENAI_CODING_MODEL="${OPENAI_CODING_MODEL:-openai/gpt-5.1-codex}"
+}
+
+on_reload() {
+  RELOAD_REQUESTED=1
+  if [ -n "$CHILD_PID" ]; then
+    kill -TERM "$CHILD_PID" 2>/dev/null || true
+  fi
+}
+
+on_shutdown() {
+  SHUTDOWN_REQUESTED=1
+  if [ -n "$CHILD_PID" ]; then
+    kill -TERM "$CHILD_PID" 2>/dev/null || true
+  fi
+}
+
+trap on_reload USR1
+trap on_shutdown TERM INT
+
+if [ "$#" -eq 0 ]; then
+  echo "entrypoint: no command provided" >&2
+  exit 1
+fi
+
+while :; do
+  load_runtime_secrets
+
+  "$@" &
+  CHILD_PID=$!
+  wait "$CHILD_PID"
+  exit_code=$?
+  CHILD_PID=""
+
+  if [ "$SHUTDOWN_REQUESTED" -eq 1 ]; then
+    exit "$exit_code"
+  fi
+
+  if [ "$RELOAD_REQUESTED" -eq 1 ]; then
+    RELOAD_REQUESTED=0
+    echo "entrypoint: reload requested - restarting OpenClaw with refreshed secrets"
+    continue
+  fi
+
+  exit "$exit_code"
+done
