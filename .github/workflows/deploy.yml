@@ -71,7 +71,44 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Record deploy start time
+        id: deploy-start
+        run: |
+          echo "iso=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+          echo "epoch=$(date -u +%s)" >> "$GITHUB_OUTPUT"
+
       - uses: actions/checkout@v4
+
+      - name: Resolve deployed PR info (if any)
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          PRS=$(gh api -H "Accept: application/vnd.github+json" "/repos/${{ github.repository }}/commits/${{ github.sha }}/pulls")
+          PR_URL=$(echo "$PRS" | jq -r ".[0].html_url // empty")
+          PR_NUMBER=$(echo "$PRS" | jq -r ".[0].number // empty")
+          PR_TITLE=$(echo "$PRS" | jq -r ".[0].title // empty")
+          PR_MERGED=$(echo "$PRS" | jq -r ".[0].merged // empty")
+          PR_LABELS=$(echo "$PRS" | jq -c "([.[0].labels[]?.name] // [])")
+
+          # Heuristic: whether this deploy was intended to upgrade upstream OpenClaw.
+          # - If the triggering PR has label "upgrade openclaw" OR
+          # - The workflow was manually dispatched with base_image_tag override.
+          UPGRADE_LABEL=$(echo "$PRS" | jq -r "([.[0].labels[]?.name] | any(. == \"upgrade openclaw\")) // false")
+          BASE_OVERRIDE="${{ github.event.inputs.base_image_tag }}"
+          if [ "$UPGRADE_LABEL" = "true" ] || [ -n "$BASE_OVERRIDE" ]; then
+            UPGRADED_OPENCLAW=true
+          else
+            UPGRADED_OPENCLAW=false
+          fi
+
+          echo "url=$PR_URL" >> "$GITHUB_OUTPUT"
+          echo "number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "title=$PR_TITLE" >> "$GITHUB_OUTPUT"
+          echo "merged=$PR_MERGED" >> "$GITHUB_OUTPUT"
+          echo "labels=$PR_LABELS" >> "$GITHUB_OUTPUT"
+          echo "upgraded_openclaw=$UPGRADED_OPENCLAW" >> "$GITHUB_OUTPUT"
 
       - name: Compute context hash
         id: ctx
@@ -167,7 +204,6 @@ jobs:
 
       - name: Resolve base image
         id: base
-        if: steps.image-exists.outputs.exists != 'true'
         run: |
           REGISTRY="${{ steps.ecr-login.outputs.registry }}"
           REPO="${{ env.ECR_BASE_REPO }}"
@@ -182,9 +218,16 @@ jobs:
               --output text)
           fi
 
+          DIGEST=$(aws ecr describe-images \
+            --repository-name "$REPO" \
+            --image-ids imageTag="$TAG" \
+            --query "imageDetails[0].imageDigest" \
+            --output text)
+
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
           echo "image=${REGISTRY}/${REPO}:${TAG}" >> "$GITHUB_OUTPUT"
-          echo "Using base image: ${REGISTRY}/${REPO}:${TAG}"
+          echo "Using base image: ${REGISTRY}/${REPO}:${TAG} (${DIGEST})"
 
       - name: Set up Docker Buildx
         if: steps.image-exists.outputs.exists != 'true'
@@ -314,6 +357,173 @@ jobs:
             --cluster ${{ env.ECS_CLUSTER }} \
             --services ${{ env.ECS_SERVICE }}
           echo "Deployment complete!"
+
+      - name: Write deploy manifest
+        id: manifest
+        if: always()
+        env:
+          REPO: ${{ github.repository }}
+          COMMIT_SHA: ${{ github.sha }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          SERVER_URL: ${{ github.server_url }}
+          JOB_STATUS: ${{ job.status }}
+
+          DEPLOY_START_ISO: ${{ steps.deploy-start.outputs.iso }}
+          DEPLOY_START_EPOCH: ${{ steps.deploy-start.outputs.epoch }}
+
+          CONTEXT_HASH: ${{ steps.ctx.outputs.hash }}
+
+          PR_URL: ${{ steps.pr.outputs.url }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          PR_TITLE: ${{ steps.pr.outputs.title }}
+          PR_MERGED: ${{ steps.pr.outputs.merged }}
+          PR_LABELS_JSON: ${{ steps.pr.outputs.labels }}
+          UPGRADED_OPENCLAW: ${{ steps.pr.outputs.upgraded_openclaw }}
+
+          BASE_IMAGE: ${{ steps.base.outputs.image }}
+          BASE_IMAGE_TAG: ${{ steps.base.outputs.tag }}
+          BASE_IMAGE_DIGEST: ${{ steps.base.outputs.digest }}
+
+          SRC_IMAGE: ${{ steps.tags.outputs.image }}
+          SRC_IMAGE_SHORT: ${{ steps.tags.outputs.short }}
+          SRC_IMAGE_CTX_TAG: ${{ steps.tags.outputs.ctx }}
+          SRC_IMAGE_CTX_IMAGE: ${{ steps.tags.outputs.ctx_image }}
+
+          CHANGED: ${{ steps.check.outputs.changed }}
+          NEW_DIGEST: ${{ steps.check.outputs.new_digest }}
+          CURRENT_DIGEST: ${{ steps.check.outputs.current_digest }}
+
+          TASK_DEF_ARN: ${{ steps.task-def.outputs.arn }}
+
+          ECS_CLUSTER: ${{ env.ECS_CLUSTER }}
+          ECS_SERVICE: ${{ env.ECS_SERVICE }}
+          ECS_TASK_FAMILY: ${{ env.ECS_TASK_FAMILY }}
+          AWS_REGION: ${{ env.AWS_REGION }}
+        run: |
+          set -euo pipefail
+
+          DEPLOY_END_ISO=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          DEPLOY_END_EPOCH=$(date -u +%s)
+          RUN_URL="$SERVER_URL/$REPO/actions/runs/$RUN_ID"
+
+          CHANGED_VAL="${CHANGED:-}"
+          if [ -z "$CHANGED_VAL" ]; then CHANGED_VAL="unknown"; fi
+
+          if [ -z "${PR_LABELS_JSON:-}" ]; then PR_LABELS_JSON='[]'; fi
+
+          BASE_OPENCLAW_GIT_SHA=""
+          if [ "${UPGRADED_OPENCLAW:-}" = "true" ]; then
+            # build-base-image workflow tags base images like <ref>-<shortsha> (e.g. main-1a2b3c4)
+            # Extract the suffix after the last dash if it looks like a hex sha.
+            CANDIDATE="${BASE_IMAGE_TAG##*-}"
+            if echo "$CANDIDATE" | grep -Eq "^[0-9a-f]{7,40}$"; then
+              BASE_OPENCLAW_GIT_SHA="$CANDIDATE"
+            fi
+          fi
+
+          jq -n \
+            --arg repo "$REPO" \
+            --arg commit_sha "$COMMIT_SHA" \
+            --arg run_id "$RUN_ID" \
+            --arg run_attempt "$RUN_ATTEMPT" \
+            --arg run_url "$RUN_URL" \
+            --arg status "$JOB_STATUS" \
+            --arg deploy_start_iso "$DEPLOY_START_ISO" \
+            --arg deploy_start_epoch "$DEPLOY_START_EPOCH" \
+            --arg deploy_end_iso "$DEPLOY_END_ISO" \
+            --arg deploy_end_epoch "$DEPLOY_END_EPOCH" \
+            --arg context_hash "$CONTEXT_HASH" \
+            --arg pr_url "$PR_URL" \
+            --arg pr_number "$PR_NUMBER" \
+            --arg pr_title "$PR_TITLE" \
+            --arg pr_merged "$PR_MERGED" \
+            --argjson pr_labels "$PR_LABELS_JSON" \
+            --arg upgraded_openclaw "$UPGRADED_OPENCLAW" \
+            --arg base_image "$BASE_IMAGE" \
+            --arg base_image_tag "$BASE_IMAGE_TAG" \
+            --arg base_image_digest "$BASE_IMAGE_DIGEST" \
+            --arg base_openclaw_git_sha "$BASE_OPENCLAW_GIT_SHA" \
+            --arg src_image "$SRC_IMAGE" \
+            --arg src_image_short "$SRC_IMAGE_SHORT" \
+            --arg src_image_ctx_tag "$SRC_IMAGE_CTX_TAG" \
+            --arg src_image_ctx_image "$SRC_IMAGE_CTX_IMAGE" \
+            --arg changed "$CHANGED_VAL" \
+            --arg new_digest "$NEW_DIGEST" \
+            --arg current_digest "$CURRENT_DIGEST" \
+            --arg task_def_arn "$TASK_DEF_ARN" \
+            --arg ecs_cluster "$ECS_CLUSTER" \
+            --arg ecs_service "$ECS_SERVICE" \
+            --arg ecs_task_family "$ECS_TASK_FAMILY" \
+            --arg aws_region "$AWS_REGION" \
+            '{
+              schemaVersion: 1,
+              generatedAt: (now | todateiso8601),
+              repo: $repo,
+              commitSha: $commit_sha,
+              run: { id: $run_id, attempt: $run_attempt, url: $run_url },
+              deploy: {
+                startTime: { iso: $deploy_start_iso, epoch: ($deploy_start_epoch|tonumber?) },
+                endTime: { iso: $deploy_end_iso, epoch: ($deploy_end_epoch|tonumber?) },
+                status: $status,
+                changed: $changed
+              },
+              pr: {
+                url: ($pr_url | select(length>0) // null),
+                number: ($pr_number | select(length>0) | tonumber? // null),
+                title: ($pr_title | select(length>0) // null),
+                merged: ($pr_merged | select(length>0) // null),
+                labels: $pr_labels
+              },
+              images: {
+                derived: {
+                  image: $src_image,
+                  tag: $src_image_short,
+                  contextTag: $src_image_ctx_tag,
+                  contextImage: $src_image_ctx_image,
+                  digestNew: ($new_digest | select(length>0) // null),
+                  digestPrevious: ($current_digest | select(length>0) // null)
+                },
+                base: {
+                  image: ($base_image | select(length>0) // null),
+                  tag: ($base_image_tag | select(length>0) // null),
+                  digest: ($base_image_digest | select(length>0) // null),
+                  openclawGitSha: ($base_openclaw_git_sha | select(length>0) // null)
+                }
+              },
+              ecs: {
+                cluster: $ecs_cluster,
+                service: $ecs_service,
+                taskFamily: $ecs_task_family,
+                taskDefinitionArn: ($task_def_arn | select(length>0) // null),
+                region: $aws_region
+              },
+              flags: {
+                upgradedOpenClaw: ($upgraded_openclaw == "true")
+              },
+              contextHash: $context_hash
+            }' > deploy-manifest.json
+
+          echo "wrote=deploy-manifest.json" >> "$GITHUB_OUTPUT"
+          echo "end_iso=$DEPLOY_END_ISO" >> "$GITHUB_OUTPUT"
+
+      - name: Upload deploy manifest artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deploy-manifest-${{ github.sha }}
+          path: deploy-manifest.json
+          if-no-files-found: error
+
+      - name: Upload deploy manifest to S3 (artifacts bucket)
+        if: always()
+        env:
+          ARTIFACTS_BUCKET: uranisoftware-openclaw-artifacts
+        run: |
+          set -euo pipefail
+          KEY="deploy-manifests/${{ github.sha }}/${{ github.run_id }}-${{ github.run_attempt }}.json"
+          aws s3 cp deploy-manifest.json "s3://$ARTIFACTS_BUCKET/$KEY"
+          echo "Uploaded: s3://$ARTIFACTS_BUCKET/$KEY"
 
       - name: Summary
         run: |
