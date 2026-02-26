@@ -1,5 +1,8 @@
 # .bashrc for OpenClaw container
 
+export AWS_PROFILE=openclaw-dev
+export AWS_REGION=us-west-2
+
 # Set a simple prompt
 export PS1="\u@\h:\w$ "
 
