@@ -34,6 +34,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       skip: ${{ steps.skip.outputs.skip }}
+      upgrade_openclaw: ${{ steps.skip.outputs.upgrade_openclaw }}
     steps:
       - name: Check skip-deploy label
         id: skip
@@ -42,6 +43,7 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" != "push" ]; then
             echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "upgrade_openclaw=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -54,6 +56,13 @@ jobs:
             echo "### Deploy skipped (label: skip deploy) :no_entry_sign:" >> "$GITHUB_STEP_SUMMARY"
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          if echo "$PRS" | jq -e '.[] | select(.labels[]?.name == "upgrade openclaw")' >/dev/null; then
+            echo "upgrade_openclaw=true" >> "$GITHUB_OUTPUT"
+            echo "### Base image upgrade requested (label: upgrade openclaw) :arrow_up:" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "upgrade_openclaw=false" >> "$GITHUB_OUTPUT"
           fi
 
   build-and-deploy:
@@ -99,6 +108,19 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Prepare upstream openclaw checkout
+        if: needs.check-skip.outputs.upgrade_openclaw == 'true'
+        run: |
+          git clone --depth 1 https://github.com/openclaw/openclaw ../openclaw
+
+      - name: Upgrade openclaw base image
+        if: needs.check-skip.outputs.upgrade_openclaw == 'true'
+        env:
+          OPENCLAW_SKIP_FETCH_ENV: "1"
+        run: |
+          chmod +x script/update-base-image.sh
+          script/update-base-image.sh
+
       - name: Login to Amazon ECR
         id: ecr-login
         uses: aws-actions/amazon-ecr-login@v2
@@ -119,6 +141,12 @@ jobs:
       - name: Check if context image already exists
         id: image-exists
         run: |
+          if [[ "${{ needs.check-skip.outputs.upgrade_openclaw }}" == "true" ]]; then
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "upgrade openclaw label detected; forcing derived image rebuild."
+            exit 0
+          fi
+
           set +e
           aws ecr describe-images \
             --repository-name "${{ env.ECR_SRC_REPO }}" \
