@@ -384,6 +384,16 @@ jobs:
 
           if [ -z "${PR_LABELS_JSON:-}" ]; then PR_LABELS_JSON='[]'; fi
 
+          BASE_OPENCLAW_GIT_SHA=""
+          if [ "${UPGRADED_OPENCLAW:-}" = "true" ]; then
+            # build-base-image workflow tags base images like <ref>-<shortsha> (e.g. main-1a2b3c4)
+            # Extract the suffix after the last dash if it looks like a hex sha.
+            CANDIDATE="${BASE_IMAGE_TAG##*-}"
+            if echo "$CANDIDATE" | grep -Eq "^[0-9a-f]{7,40}$"; then
+              BASE_OPENCLAW_GIT_SHA="$CANDIDATE"
+            fi
+          fi
+
           jq -n \
             --arg repo "$REPO" \
             --arg commit_sha "$COMMIT_SHA" \
@@ -405,6 +415,7 @@ jobs:
             --arg base_image "$BASE_IMAGE" \
             --arg base_image_tag "$BASE_IMAGE_TAG" \
             --arg base_image_digest "$BASE_IMAGE_DIGEST" \
+            --arg base_openclaw_git_sha "$BASE_OPENCLAW_GIT_SHA" \
             --arg src_image "$SRC_IMAGE" \
             --arg src_image_short "$SRC_IMAGE_SHORT" \
             --arg src_image_ctx_tag "$SRC_IMAGE_CTX_TAG" \
@@ -448,7 +459,8 @@ jobs:
                 base: {
                   image: ($base_image | select(length>0) // null),
                   tag: ($base_image_tag | select(length>0) // null),
-                  digest: ($base_image_digest | select(length>0) // null)
+                  digest: ($base_image_digest | select(length>0) // null),
+                  openclawGitSha: ($base_openclaw_git_sha | select(length>0) // null)
                 }
               },
               ecs: {
@@ -474,6 +486,16 @@ jobs:
           name: deploy-manifest-${{ github.sha }}
           path: deploy-manifest.json
           if-no-files-found: error
+
+      - name: Upload deploy manifest to S3 (artifacts bucket)
+        if: always()
+        env:
+          ARTIFACTS_BUCKET: uranisoftware-openclaw-artifacts
+        run: |
+          set -euo pipefail
+          KEY="deploy-manifests/${{ github.sha }}/${{ github.run_id }}-${{ github.run_attempt }}.json"
+          aws s3 cp deploy-manifest.json "s3://$ARTIFACTS_BUCKET/$KEY"
+          echo "Uploaded: s3://$ARTIFACTS_BUCKET/$KEY"
 
       - name: Summary
         run: |
