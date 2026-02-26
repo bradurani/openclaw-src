@@ -1,0 +1,7 @@
+#!/usr/bin/env sh
+set -e
+
+# Open a remote OpenClaw TUI session inside the running ECS task.
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+
+exec "$SCRIPT_DIR/ecs-exec" openclaw tui "$@"
