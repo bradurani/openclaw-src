@@ -21,6 +21,7 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
       > /etc/apt/sources.list.d/github-cli.list \
     && apt-get update && apt-get install -y --no-install-recommends \
          gh vim nano \
+         dnsutils \
          jq \
          libimage-exiftool-perl \
     && rm -rf /var/lib/apt/lists/*
