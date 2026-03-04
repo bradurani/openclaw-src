@@ -2,6 +2,23 @@
 set -e
 
 # Open a remote OpenClaw TUI session inside the running ECS task.
+# Includes terminal cleanup so a crashed/killed TUI doesn't leave the
+# local terminal in a broken state.
+
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
-exec "$SCRIPT_DIR/ecs-exec" openclaw tui "$@"
+cleanup() {
+  # Restore sane terminal settings (cooked mode, echo, etc.)
+  stty sane 2>/dev/null || true
+  # Show cursor, exit alternate screen, reset attributes
+  printf '\033[?25h\033[?1049l\033[0m' 2>/dev/null || true
+}
+
+trap cleanup EXIT HUP INT TERM
+
+"$SCRIPT_DIR/ecs-exec" openclaw tui "$@"
+status=$?
+
+cleanup
+trap - EXIT HUP INT TERM
+exit $status
