@@ -19,6 +19,7 @@ on:
 permissions:
   id-token: write   # AWS OIDC
   contents: read
+  pull-requests: read  # needed for /commits/{sha}/pulls label lookup
 
 env:
   AWS_REGION: us-west-2
