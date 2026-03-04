@@ -1,9 +1,5 @@
 #!/bin/bash
 
-# Load app secrets for local scripts (skip with OPENCLAW_SKIP_FETCH_ENV=1)
-if [ -z "${OPENCLAW_SKIP_FETCH_ENV:-}" ] && [ -x "script/fetch-env" ]; then
-  eval "$(script/fetch-env)"
-fi
 # Build the gateway image and run gateway and local CLI containers
 set -e
 

@@ -1,9 +1,5 @@
 #!/bin/sh
 
-# Load app secrets for local scripts (skip with OPENCLAW_SKIP_FETCH_ENV=1)
-if [ -z "${OPENCLAW_SKIP_FETCH_ENV:-}" ] && [ -x "script/fetch-env" ]; then
-  eval "$(script/fetch-env)"
-fi
 # ecs-exec — Interactive shell into the running OpenClaw ECS container
 #
 # Usage: script/ecs-exec [command]

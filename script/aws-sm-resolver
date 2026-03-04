@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# SecretRef exec provider for AWS Secrets Manager.
+#
+# Implements the OpenClaw exec provider protocol (protocolVersion 1):
+#   stdin:  { "protocolVersion": 1, "provider": "...", "ids": ["openclaw/foo", ...] }
+#   stdout: { "protocolVersion": 1, "values": { "openclaw/foo": "secret-value" }, "errors": {} }
+#
+# Each id is used directly as the Secrets Manager secret name.
+# Requires: aws cli, python3 (both available in the openclaw-src image).
+set -euo pipefail
+
+REGION="${AWS_REGION:-${AWS_DEFAULT_REGION:-us-west-2}}"
+
+REQUEST=$(cat)
+
+exec python3 -c '
+import json, subprocess, sys, os
+
+region = os.environ.get("AWS_REGION", os.environ.get("AWS_DEFAULT_REGION", "us-west-2"))
+request = json.loads(sys.argv[1])
+ids = request.get("ids", [])
+
+values = {}
+errors = {}
+
+for secret_id in ids:
+    try:
+        result = subprocess.run(
+            [
+                "aws", "secretsmanager", "get-secret-value",
+                "--secret-id", secret_id,
+                "--region", region,
+                "--query", "SecretString",
+                "--output", "text",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            values[secret_id] = result.stdout.strip()
+        else:
+            errors[secret_id] = {"message": result.stderr.strip() or "empty secret value"}
+    except subprocess.TimeoutExpired:
+        errors[secret_id] = {"message": "timeout fetching secret"}
+    except Exception as e:
+        errors[secret_id] = {"message": str(e)}
+
+json.dump({"protocolVersion": 1, "values": values, "errors": errors}, sys.stdout)
+' "$REQUEST"
