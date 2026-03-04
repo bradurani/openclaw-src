@@ -48,23 +48,40 @@ jobs:
             exit 0
           fi
 
-          PRS=$(gh api \
+          # Extract PR number from squash-merge commit message "title (#N)"
+          # and look up labels directly — avoids the /commits/{sha}/pulls
+          # indexing race where the association isn't ready yet.
+          COMMIT_MSG=$(gh api \
             -H "Accept: application/vnd.github+json" \
-            "/repos/${{ github.repository }}/commits/${{ github.sha }}/pulls")
+            "/repos/${{ github.repository }}/git/commits/${{ github.sha }}" \
+            --jq '.message' | head -1)
 
-          if echo "$PRS" | jq -e '.[] | select(.labels[]?.name == "skip deploy")' >/dev/null; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "### Deploy skipped (label: skip deploy) :no_entry_sign:" >> "$GITHUB_STEP_SUMMARY"
+          PR_NUM=$(echo "$COMMIT_MSG" | grep -oE '\(#([0-9]+)\)$' | tr -dc '0-9' || true)
+
+          SKIP="false"
+          UPGRADE="false"
+
+          if [ -n "$PR_NUM" ]; then
+            echo "Resolved PR #${PR_NUM} from merge commit message"
+            LABELS=$(gh api \
+              -H "Accept: application/vnd.github+json" \
+              "/repos/${{ github.repository }}/pulls/${PR_NUM}" \
+              --jq '[.labels[].name]')
+
+            if echo "$LABELS" | jq -e '.[] | select(. == "skip deploy")' >/dev/null 2>&1; then
+              SKIP="true"
+              echo "### Deploy skipped (label: skip deploy) :no_entry_sign:" >> "$GITHUB_STEP_SUMMARY"
+            fi
+            if echo "$LABELS" | jq -e '.[] | select(. == "upgrade openclaw")' >/dev/null 2>&1; then
+              UPGRADE="true"
+              echo "### Base image upgrade requested (label: upgrade openclaw) :arrow_up:" >> "$GITHUB_STEP_SUMMARY"
+            fi
           else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "No PR number found in commit message — skipping label checks"
           fi
 
-          if echo "$PRS" | jq -e '.[] | select(.labels[]?.name == "upgrade openclaw")' >/dev/null; then
-            echo "upgrade_openclaw=true" >> "$GITHUB_OUTPUT"
-            echo "### Base image upgrade requested (label: upgrade openclaw) :arrow_up:" >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "upgrade_openclaw=false" >> "$GITHUB_OUTPUT"
-          fi
+          echo "skip=${SKIP}" >> "$GITHUB_OUTPUT"
+          echo "upgrade_openclaw=${UPGRADE}" >> "$GITHUB_OUTPUT"
 
   build-and-deploy:
     needs: check-skip
