@@ -3,18 +3,16 @@
 # Prerequisites:
 #   1. Build the upstream base image first (one-time):
 #        cd ../openclaw && docker build -t openclaw:local .
-#   2. Default secret source is AWS Secrets Manager at container startup.
-#      To use local .env secrets instead, set OPENCLAW_SECRETS_SOURCE=env.
-#      script/fetch-env > openclaw/.env
+#   2. Secrets are resolved at runtime via the native SecretRef exec provider
+#      (script/aws-sm-resolver), which calls AWS Secrets Manager directly.
+#      No .env file is needed for OpenClaw credentials.
 #
 # Usage:
 #   docker compose up openclaw-gateway    # start gateway (foreground)
 #   docker compose run --rm openclaw-cli  # interactive CLI session
 #   docker compose run --rm remote-cli nodes pending
 #   docker compose run --rm remote-cli nodes approve <requestId>
-#   docker compose run --rm psql          # psql shell to remote RDS
-#
-# Secrets are fetched from Secrets Manager via script/fetch-env -> openclaw/.env (gitignored).
+#   script/psql                           # psql shell to remote RDS
 
 services:
   # --------------------------------------------------------------------------
@@ -26,12 +24,10 @@ services:
       args:
         BASE_IMAGE: openclaw:local
     image: openclaw-src:local
-    env_file:
-      - openclaw/.env
     environment:
       HOME: /home/node
       TERM: xterm-256color
-      OPENCLAW_SECRETS_SOURCE: ${OPENCLAW_SECRETS_SOURCE:-aws}
+      AWS_REGION: ${AWS_REGION:-us-west-2}
     ports:
       - "${OPENCLAW_GATEWAY_PORT:-18789}:18789"
     init: true
@@ -59,14 +55,12 @@ services:
       args:
         BASE_IMAGE: openclaw:local
     image: openclaw-src:local
-    env_file:
-      - openclaw/.env
     environment:
       OPENCLAW_GATEWAY_URL: http://openclaw-gateway:18789
       HOME: /home/node
       TERM: xterm-256color
       BROWSER: echo
-      OPENCLAW_SECRETS_SOURCE: ${OPENCLAW_SECRETS_SOURCE:-aws}
+      AWS_REGION: ${AWS_REGION:-us-west-2}
     depends_on:
       - openclaw-gateway
     stdin_open: true
@@ -90,14 +84,12 @@ services:
       args:
         BASE_IMAGE: openclaw:local
     image: openclaw-src:local
-    env_file:
-      - openclaw/.env
     environment:
       HOME: /home/node
       TERM: xterm-256color
       BROWSER: echo
       OPENCLAW_GATEWAY_URL: "wss://gateway.uranisoftware.com"
-      OPENCLAW_SECRETS_SOURCE: ${OPENCLAW_SECRETS_SOURCE:-aws}
+      AWS_REGION: ${AWS_REGION:-us-west-2}
     stdin_open: true
     tty: true
     init: true
@@ -112,14 +104,14 @@ services:
       ]
 
   # --------------------------------------------------------------------------
-  # psql — interactive shell to remote RDS
-  # Usage: docker compose run --rm psql
-  #        docker compose run --rm psql -c 'SELECT count(*) FROM memories'
+  # psql — interactive shell to remote RDS (fetches credentials from AWS SM)
+  # Prefer script/psql for direct use without docker.
+  # Usage: PGVECTOR_URL=<url> docker compose run --rm psql
   # --------------------------------------------------------------------------
   psql:
     image: postgres:16
-    env_file:
-      - openclaw/.env
+    environment:
+      PGVECTOR_URL: ${PGVECTOR_URL}
     stdin_open: true
     tty: true
     profiles:

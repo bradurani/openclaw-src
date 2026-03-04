@@ -1,31 +1,27 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-LOAD_SECRETS_BIN="/usr/local/bin/load-secrets"
-SECRETS_SOURCE="${OPENCLAW_SECRETS_SOURCE:-aws}"
+# OpenClaw credentials (OpenAI, Slack, gateway auth) are resolved natively
+# via the SecretRef exec provider configured in openclaw.json.
+#
+# This wrapper only injects env vars needed by non-OpenClaw tools:
+#   - GH_TOKEN      — GitHub CLI auth (used by agents for git operations)
+#   - PGVECTOR_URL  — memory-pgvector plugin (uses ${PGVECTOR_URL} env interpolation)
 
-case "$SECRETS_SOURCE" in
-  aws)
-    if [[ -x "$LOAD_SECRETS_BIN" ]]; then
-      # shellcheck disable=SC1090
-      eval "$($LOAD_SECRETS_BIN --format shell)"
-    fi
-    ;;
-  env)
-    # Use environment values already injected by the caller (for example .env).
-    ;;
-  *)
-    echo "openclaw-wrapper: unsupported OPENCLAW_SECRETS_SOURCE='$SECRETS_SOURCE' (expected: aws or env)" >&2
-    exit 1
-    ;;
-esac
+REGION="${AWS_REGION:-${AWS_DEFAULT_REGION:-us-west-2}}"
 
-export CHANNELS__SLACK__TOKEN="${CHANNELS__SLACK__TOKEN:-${SLACK_BOT_TOKEN:-}}"
+fetch_secret() {
+  aws secretsmanager get-secret-value \
+    --secret-id "$1" \
+    --region "$REGION" \
+    --query 'SecretString' \
+    --output text 2>/dev/null || true
+}
+
+export GH_TOKEN="${GH_TOKEN:-$(fetch_secret openclaw/github-token)}"
+export PGVECTOR_URL="${PGVECTOR_URL:-$(fetch_secret openclaw/pgvector-url)}"
+
 export OPENAI_DEFAULT_MODEL="${OPENAI_DEFAULT_MODEL:-openai/gpt-5.2}"
 export OPENAI_CODING_MODEL="${OPENAI_CODING_MODEL:-openai/gpt-5.1-codex}"
-
-if [[ -z "${SLACK_BOT_TOKEN:-}" ]]; then
-  echo "openclaw-wrapper: SLACK_BOT_TOKEN is not set; set OPENCLAW_SECRETS_SOURCE=env to use .env values or ensure AWS secrets access is configured" >&2
-fi
 
 exec node /app/openclaw.mjs "$@"
