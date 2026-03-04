@@ -56,6 +56,32 @@ if [ -d "/home/node/src/openclaw/extensions" ]; then
   done
 fi
 
+# ---------------------------------------------------------------------------
+# Config patches — idempotent jq scripts applied to openclaw.json on startup.
+# Patches live in config/patches/NNN-name.sh (baked into the image).
+# A marker file on EFS tracks which patches have already been applied so each
+# patch runs at most once per persistent volume.
+# ---------------------------------------------------------------------------
+PATCHES_DIR="/home/node/src/openclaw/config/patches"
+PATCHES_APPLIED="${OPENCLAW_DIR}/.patches-applied"
+CONFIG_FILE="${OPENCLAW_DIR}/openclaw.json"
+
+if [ -d "$PATCHES_DIR" ] && [ -f "$CONFIG_FILE" ]; then
+  touch "$PATCHES_APPLIED"
+  for patch in "$PATCHES_DIR"/*.sh; do
+    [ -f "$patch" ] || continue
+    patch_name=$(basename "$patch")
+    if grep -qxF "$patch_name" "$PATCHES_APPLIED"; then
+      echo "entrypoint: patch $patch_name already applied"
+    else
+      echo "entrypoint: applying patch $patch_name"
+      sh "$patch" "$CONFIG_FILE"
+      echo "$patch_name" >> "$PATCHES_APPLIED"
+      echo "entrypoint: patch $patch_name applied"
+    fi
+  done
+fi
+
 if [ "$#" -eq 0 ]; then
   echo "entrypoint: no command provided" >&2
   exit 1
