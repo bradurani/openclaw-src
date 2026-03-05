@@ -9,7 +9,7 @@
 // directly — no subprocess overhead from shelling out to the aws CLI.
 
 // Resolve from /app/node_modules since this script runs from /usr/local/bin
-const { SecretsManagerClient, GetSecretValueCommand } = require("/app/node_modules/@aws-sdk/client-secrets-manager");
+const { SecretsManagerClient, GetSecretValueCommand } = require("/opt/aws-sdk/node_modules/@aws-sdk/client-secrets-manager");
 
 const region = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "us-west-2";
 const client = new SecretsManagerClient({ region });
