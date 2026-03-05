@@ -27,10 +27,10 @@ jq '
 
   # Map of env var names to Secrets Manager secret IDs.
   # Only vars that are NOT set in the runtime environment.
-  # NOTE: GATEWAY_TOKEN is deliberately excluded — gateway.auth.token only
-  # accepts a plain string, so we resolve it via env var in the wrapper script.
+  # NOTE: GATEWAY_TOKEN and OPENAI_API_KEY are deliberately excluded —
+  # gateway.auth.token and plugins.*.embedding.apiKey only accept plain
+  # strings, so we resolve them via env vars in the wrapper script.
   {
-    "OPENAI_API_KEY":  "openclaw/openai-api-key",
     "SLACK_BOT_TOKEN": "openclaw/slack-bot-token",
     "SLACK_APP_TOKEN": "openclaw/slack-app-token"
   } as $secret_map |
