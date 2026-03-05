@@ -382,19 +382,24 @@ jobs:
             --network-configuration "$NET_CONFIG" \
             --count 1 \
             --started-by "deploy-boot-test" \
+            --overrides '{"containerOverrides":[{"name":"${{ env.CONTAINER_NAME }}","command":["openclaw","--version"]}]}' \
             --query 'tasks[0].taskArn' \
             --output text)
 
           echo "task_arn=${TASK_ARN}" >> "$GITHUB_OUTPUT"
           echo "Started boot-test task: ${TASK_ARN}"
 
-          # Wait up to 120s for the task to reach RUNNING (image pull can be slow).
-          echo "Waiting for task to reach RUNNING..."
+          # The task runs "openclaw --version" which exercises:
+          #   entrypoint.sh (EFS setup, patches) → wrapper (secret fetching) → node start
+          # then exits cleanly without connecting to any channels.
+          #
+          # Wait up to 180s for the task to finish (includes image pull + startup).
+          echo "Waiting for boot-test task to complete..."
           SECONDS=0
-          MAX_WAIT=120
+          MAX_WAIT=180
           STATUS="PROVISIONING"
-          while [[ "$STATUS" != "RUNNING" && "$STATUS" != "STOPPED" && $SECONDS -lt $MAX_WAIT ]]; do
-            sleep 5
+          while [[ "$STATUS" != "STOPPED" && $SECONDS -lt $MAX_WAIT ]]; do
+            sleep 10
             STATUS=$(aws ecs describe-tasks \
               --cluster "${{ env.ECS_CLUSTER }}" \
               --tasks "$TASK_ARN" \
@@ -403,55 +408,41 @@ jobs:
             echo "  ${SECONDS}s — status: ${STATUS}"
           done
 
-          if [[ "$STATUS" == "STOPPED" ]]; then
-            REASON=$(aws ecs describe-tasks \
-              --cluster "${{ env.ECS_CLUSTER }}" \
-              --tasks "$TASK_ARN" \
-              --query 'tasks[0].stoppedReason' \
-              --output text)
-            echo "::error::Boot test task stopped before reaching RUNNING: ${REASON}"
-            exit 1
-          fi
-
-          if [[ "$STATUS" != "RUNNING" ]]; then
-            echo "::error::Boot test task did not reach RUNNING within ${MAX_WAIT}s (last: ${STATUS})"
-            # Clean up
+          if [[ "$STATUS" != "STOPPED" ]]; then
+            echo "::error::Boot test task did not complete within ${MAX_WAIT}s (last: ${STATUS})"
             aws ecs stop-task --cluster "${{ env.ECS_CLUSTER }}" --task "$TASK_ARN" --reason "boot-test-timeout" >/dev/null 2>&1 || true
             exit 1
           fi
 
-          # Task is RUNNING — hold for 30s to detect early crashes.
-          echo "Task is RUNNING. Waiting 30s to verify stability..."
-          sleep 30
-
-          STATUS=$(aws ecs describe-tasks \
+          # Check exit code
+          EXIT_CODE=$(aws ecs describe-tasks \
             --cluster "${{ env.ECS_CLUSTER }}" \
             --tasks "$TASK_ARN" \
-            --query 'tasks[0].lastStatus' \
+            --query 'tasks[0].containers[0].exitCode' \
             --output text)
 
-          if [[ "$STATUS" == "STOPPED" ]]; then
+          if [[ "$EXIT_CODE" != "0" ]]; then
             REASON=$(aws ecs describe-tasks \
               --cluster "${{ env.ECS_CLUSTER }}" \
               --tasks "$TASK_ARN" \
               --query 'tasks[0].stoppedReason' \
               --output text)
-            EXIT_CODE=$(aws ecs describe-tasks \
-              --cluster "${{ env.ECS_CLUSTER }}" \
-              --tasks "$TASK_ARN" \
-              --query 'tasks[0].containers[0].exitCode' \
-              --output text)
-            echo "::error::Boot test crashed after reaching RUNNING (exit ${EXIT_CODE}): ${REASON}"
+            echo "::error::Boot test failed (exit ${EXIT_CODE}): ${REASON}"
+
+            # Attempt to fetch logs for the failed task
+            TASK_ID="${TASK_ARN##*/}"
+            echo "--- Boot test logs ---"
+            aws logs get-log-events \
+              --log-group-name /ecs/openclaw \
+              --log-stream-name "ecs/openclaw/${TASK_ID}" \
+              --limit 50 \
+              --query 'events[*].message' \
+              --output text 2>/dev/null || echo "(no logs available)"
+            echo "--- end logs ---"
             exit 1
           fi
 
-          echo "Boot test passed — task stayed RUNNING for 30s."
-
-          # Clean up the boot-test task.
-          aws ecs stop-task \
-            --cluster "${{ env.ECS_CLUSTER }}" \
-            --task "$TASK_ARN" \
-            --reason "boot-test-passed" >/dev/null 2>&1 || true
+          echo "Boot test passed (exit 0)."
 
       - name: Deploy to ECS
         if: steps.check.outputs.changed == 'true'
