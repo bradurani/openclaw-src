@@ -166,7 +166,8 @@ jobs:
       - name: Prepare upstream openclaw checkout
         if: needs.check-skip.outputs.upgrade_openclaw == 'true'
         run: |
-          git clone --depth 1 https://github.com/openclaw/openclaw ../openclaw
+          git clone --no-checkout --filter=blob:none https://github.com/openclaw/openclaw ../openclaw
+          cd ../openclaw && git fetch --tags origin
 
       - name: Upgrade openclaw base image
         if: needs.check-skip.outputs.upgrade_openclaw == 'true'
