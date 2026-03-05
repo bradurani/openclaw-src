@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/local/bin/node
 // SecretRef exec provider for AWS Secrets Manager.
 //
 // Implements the OpenClaw exec provider protocol (protocolVersion 1):
