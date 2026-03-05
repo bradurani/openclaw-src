@@ -358,6 +358,101 @@ jobs:
           echo "arn=${NEW_ARN}" >> "$GITHUB_OUTPUT"
           echo "Registered task definition: ${NEW_ARN}"
 
+      - name: Boot test
+        if: steps.check.outputs.changed == 'true'
+        id: boot-test
+        run: |
+          set -euo pipefail
+
+          echo "Running boot test with new task definition..."
+
+          # Pull network config from the service so the test task has
+          # the same subnets, security groups, and EFS access.
+          NET_CONFIG=$(aws ecs describe-services \
+            --cluster "${{ env.ECS_CLUSTER }}" \
+            --services "${{ env.ECS_SERVICE }}" \
+            --query 'services[0].networkConfiguration' \
+            --output json)
+
+          TASK_ARN=$(aws ecs run-task \
+            --cluster "${{ env.ECS_CLUSTER }}" \
+            --task-definition "${{ steps.task-def.outputs.arn }}" \
+            --launch-type FARGATE \
+            --platform-version LATEST \
+            --network-configuration "$NET_CONFIG" \
+            --count 1 \
+            --started-by "deploy-boot-test" \
+            --query 'tasks[0].taskArn' \
+            --output text)
+
+          echo "task_arn=${TASK_ARN}" >> "$GITHUB_OUTPUT"
+          echo "Started boot-test task: ${TASK_ARN}"
+
+          # Wait up to 120s for the task to reach RUNNING (image pull can be slow).
+          echo "Waiting for task to reach RUNNING..."
+          SECONDS=0
+          MAX_WAIT=120
+          STATUS="PROVISIONING"
+          while [[ "$STATUS" != "RUNNING" && "$STATUS" != "STOPPED" && $SECONDS -lt $MAX_WAIT ]]; do
+            sleep 5
+            STATUS=$(aws ecs describe-tasks \
+              --cluster "${{ env.ECS_CLUSTER }}" \
+              --tasks "$TASK_ARN" \
+              --query 'tasks[0].lastStatus' \
+              --output text)
+            echo "  ${SECONDS}s — status: ${STATUS}"
+          done
+
+          if [[ "$STATUS" == "STOPPED" ]]; then
+            REASON=$(aws ecs describe-tasks \
+              --cluster "${{ env.ECS_CLUSTER }}" \
+              --tasks "$TASK_ARN" \
+              --query 'tasks[0].stoppedReason' \
+              --output text)
+            echo "::error::Boot test task stopped before reaching RUNNING: ${REASON}"
+            exit 1
+          fi
+
+          if [[ "$STATUS" != "RUNNING" ]]; then
+            echo "::error::Boot test task did not reach RUNNING within ${MAX_WAIT}s (last: ${STATUS})"
+            # Clean up
+            aws ecs stop-task --cluster "${{ env.ECS_CLUSTER }}" --task "$TASK_ARN" --reason "boot-test-timeout" >/dev/null 2>&1 || true
+            exit 1
+          fi
+
+          # Task is RUNNING — hold for 30s to detect early crashes.
+          echo "Task is RUNNING. Waiting 30s to verify stability..."
+          sleep 30
+
+          STATUS=$(aws ecs describe-tasks \
+            --cluster "${{ env.ECS_CLUSTER }}" \
+            --tasks "$TASK_ARN" \
+            --query 'tasks[0].lastStatus' \
+            --output text)
+
+          if [[ "$STATUS" == "STOPPED" ]]; then
+            REASON=$(aws ecs describe-tasks \
+              --cluster "${{ env.ECS_CLUSTER }}" \
+              --tasks "$TASK_ARN" \
+              --query 'tasks[0].stoppedReason' \
+              --output text)
+            EXIT_CODE=$(aws ecs describe-tasks \
+              --cluster "${{ env.ECS_CLUSTER }}" \
+              --tasks "$TASK_ARN" \
+              --query 'tasks[0].containers[0].exitCode' \
+              --output text)
+            echo "::error::Boot test crashed after reaching RUNNING (exit ${EXIT_CODE}): ${REASON}"
+            exit 1
+          fi
+
+          echo "Boot test passed — task stayed RUNNING for 30s."
+
+          # Clean up the boot-test task.
+          aws ecs stop-task \
+            --cluster "${{ env.ECS_CLUSTER }}" \
+            --task "$TASK_ARN" \
+            --reason "boot-test-passed" >/dev/null 2>&1 || true
+
       - name: Deploy to ECS
         if: steps.check.outputs.changed == 'true'
         run: |
