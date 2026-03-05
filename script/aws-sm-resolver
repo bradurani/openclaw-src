@@ -1,50 +1,53 @@
-#!/usr/bin/env bash
-# SecretRef exec provider for AWS Secrets Manager.
-#
-# Implements the OpenClaw exec provider protocol (protocolVersion 1):
-#   stdin:  { "protocolVersion": 1, "provider": "...", "ids": ["openclaw/foo", ...] }
-#   stdout: { "protocolVersion": 1, "values": { "openclaw/foo": "secret-value" }, "errors": {} }
-#
-# Each id is used directly as the Secrets Manager secret name.
-# Requires: aws cli, python3 (both available in the openclaw-src image).
-set -euo pipefail
+#!/usr/bin/env node
+// SecretRef exec provider for AWS Secrets Manager.
+//
+// Implements the OpenClaw exec provider protocol (protocolVersion 1):
+//   stdin:  { "protocolVersion": 1, "provider": "...", "ids": ["openclaw/foo", ...] }
+//   stdout: { "protocolVersion": 1, "values": { "openclaw/foo": "secret-value" }, "errors": {} }
+//
+// Uses the AWS SDK (available in the Node.js runtime) to call Secrets Manager
+// directly — no subprocess overhead from shelling out to the aws CLI.
 
-REGION="${AWS_REGION:-${AWS_DEFAULT_REGION:-us-west-2}}"
+// Resolve from /app/node_modules since this script runs from /usr/local/bin
+const { SecretsManagerClient, GetSecretValueCommand } = require("/app/node_modules/@aws-sdk/client-secrets-manager");
 
-REQUEST=$(cat)
+const region = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "us-west-2";
+const client = new SecretsManagerClient({ region });
 
-exec python3 -c '
-import json, subprocess, sys, os
+async function main() {
+  const chunks = [];
+  for await (const chunk of process.stdin) chunks.push(chunk);
+  const request = JSON.parse(Buffer.concat(chunks).toString());
+  const ids = request.ids || [];
 
-region = os.environ.get("AWS_REGION", os.environ.get("AWS_DEFAULT_REGION", "us-west-2"))
-request = json.loads(sys.argv[1])
-ids = request.get("ids", [])
+  const results = await Promise.allSettled(
+    ids.map(async (id) => {
+      const cmd = new GetSecretValueCommand({ SecretId: id });
+      const resp = await client.send(cmd);
+      return { id, value: resp.SecretString };
+    })
+  );
 
-values = {}
-errors = {}
+  const values = {};
+  const errors = {};
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
+    const id = ids[i];
+    if (r.status === "fulfilled") {
+      values[id] = r.value.value;
+    } else {
+      errors[id] = { message: r.reason?.message || String(r.reason) };
+    }
+  }
 
-for secret_id in ids:
-    try:
-        result = subprocess.run(
-            [
-                "/usr/local/bin/aws", "secretsmanager", "get-secret-value",
-                "--secret-id", secret_id,
-                "--region", region,
-                "--query", "SecretString",
-                "--output", "text",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            values[secret_id] = result.stdout.strip()
-        else:
-            errors[secret_id] = {"message": result.stderr.strip() or "empty secret value"}
-    except subprocess.TimeoutExpired:
-        errors[secret_id] = {"message": "timeout fetching secret"}
-    except Exception as e:
-        errors[secret_id] = {"message": str(e)}
+  process.stdout.write(JSON.stringify({ protocolVersion: 1, values, errors }));
+}
 
-json.dump({"protocolVersion": 1, "values": values, "errors": errors}, sys.stdout)
-' "$REQUEST"
+main().catch((err) => {
+  process.stdout.write(JSON.stringify({
+    protocolVersion: 1,
+    values: {},
+    errors: { _fatal: { message: err.message || String(err) } },
+  }));
+  process.exit(1);
+});
