@@ -34,7 +34,19 @@ jq '
   | .channels.slack.appToken = {
       "source": "exec", "provider": "awssm", "id": "openclaw/slack-app-token"
     }
-  | .gateway.auth.token = {
-      "source": "exec", "provider": "awssm", "id": "openclaw/gateway-token"
-    }
+
+  # gateway.auth.token only accepts a plain string — use env var interpolation
+  | .gateway.auth.token = "${GATEWAY_TOKEN}"
+
+  # --- models array (required) --------------------------------------------
+  | .models.providers.openai.models //= [
+      {"id": "gpt-4.1", "name": "GPT-4.1"},
+      {"id": "gpt-4.1-mini", "name": "GPT-4.1 Mini"},
+      {"id": "gpt-4.1-nano", "name": "GPT-4.1 Nano"},
+      {"id": "gpt-5.1-codex", "name": "GPT-5.1 Codex"},
+      {"id": "gpt-5.2", "name": "GPT-5.2"},
+      {"id": "gpt-5.2-codex", "name": "GPT-5.2 Codex"},
+      {"id": "o3-mini", "name": "o3-mini"},
+      {"id": "o4-mini", "name": "o4-mini"}
+    ]
 ' "$CONFIG" > "${CONFIG}.tmp" && mv "${CONFIG}.tmp" "$CONFIG"
