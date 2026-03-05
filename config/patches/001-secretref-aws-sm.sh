@@ -21,7 +21,8 @@ jq '
   # --- provider -----------------------------------------------------------
   .secrets.providers.awssm = {
     "source": "exec",
-    "command": "/usr/local/bin/aws-sm-resolver"
+    "command": "/usr/local/bin/aws-sm-resolver",
+    "timeoutMs": 30000
   }
 
   # --- secret references ---------------------------------------------------
