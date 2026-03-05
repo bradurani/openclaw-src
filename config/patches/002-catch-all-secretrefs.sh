@@ -23,7 +23,7 @@ echo "  patch 002: scanning for remaining env-var references"
 # OPENAI_CODING_MODEL, and AWS_* vars at runtime — leave those alone.
 jq '
   def secretref(provider; id):
-    {"$secretRef": {"provider": provider, "id": id}};
+    {"source": "exec", "provider": provider, "id": id};
 
   # Map of env var names to Secrets Manager secret IDs.
   # Only vars that are NOT set in the runtime environment.
