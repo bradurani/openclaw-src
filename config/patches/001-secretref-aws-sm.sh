@@ -1,9 +1,10 @@
 #!/bin/sh
-# 001-secretref-aws-sm.sh — Migrate secrets to native SecretRef exec provider
+# 001-secretref-aws-sm.sh — Migrate secrets to env var placeholders
 #
 # Idempotent: checks whether the awssm provider already exists before writing.
-# Replaces env-var references (${OPENAI_API_KEY}, ${SLACK_BOT_TOKEN}, etc.)
-# with SecretRef objects pointing to the aws-sm-resolver exec provider.
+# All secrets are resolved via env vars set by the wrapper script, because
+# the SecretRef exec provider cannot reliably find the `aws` CLI when
+# spawned as a subprocess by OpenClaw's node process.
 
 set -e
 
@@ -15,27 +16,19 @@ if jq -e '.secrets.providers.awssm' "$CONFIG" >/dev/null 2>&1; then
   exit 0
 fi
 
-echo "  patch 001: adding SecretRef exec provider (awssm) and secret references"
+echo "  patch 001: adding awssm provider and env var secret references"
 
 jq '
-  # --- provider -----------------------------------------------------------
+  # --- provider (kept for future use once PATH issue is resolved) ----------
   .secrets.providers.awssm = {
     "source": "exec",
     "command": "/usr/local/bin/aws-sm-resolver"
   }
 
-  # --- secret references ---------------------------------------------------
-  | .models.providers.openai.apiKey = {
-      "source": "exec", "provider": "awssm", "id": "openclaw/openai-api-key"
-    }
-  | .channels.slack.botToken = {
-      "source": "exec", "provider": "awssm", "id": "openclaw/slack-bot-token"
-    }
-  | .channels.slack.appToken = {
-      "source": "exec", "provider": "awssm", "id": "openclaw/slack-app-token"
-    }
-
-  # gateway.auth.token only accepts a plain string — use env var interpolation
+  # --- secret references (all via env vars) --------------------------------
+  | .models.providers.openai.apiKey = "${OPENAI_API_KEY}"
+  | .channels.slack.botToken = "${SLACK_BOT_TOKEN}"
+  | .channels.slack.appToken = "${SLACK_APP_TOKEN}"
   | .gateway.auth.token = "${GATEWAY_TOKEN}"
 
   # --- models array (required) --------------------------------------------
