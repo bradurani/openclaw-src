@@ -27,7 +27,7 @@ for secret_id in ids:
     try:
         result = subprocess.run(
             [
-                "aws", "secretsmanager", "get-secret-value",
+                "/usr/local/bin/aws", "secretsmanager", "get-secret-value",
                 "--secret-id", secret_id,
                 "--region", region,
                 "--query", "SecretString",
