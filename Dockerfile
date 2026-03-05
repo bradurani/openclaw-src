@@ -51,6 +51,10 @@ RUN cd /home/node/src/openclaw/extensions/memory-pgvector && npm install --omit=
 COPY --chown=node:node script/entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY --chown=node:node script/load-secrets /usr/local/bin/load-secrets
 COPY --chown=node:node script/aws-sm-resolver /usr/local/bin/aws-sm-resolver
+# The upstream image symlinks /usr/local/bin/openclaw -> /app/openclaw.mjs.
+# COPY follows symlinks, so without removing it first the wrapper script would
+# overwrite the real Node.js entry point and crash the container.
+RUN rm -f /usr/local/bin/openclaw
 COPY --chown=node:node script/openclaw-wrapper.sh /usr/local/bin/openclaw
 COPY --chown=node:node script/restart-openclaw /usr/local/bin/restart-openclaw
 RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/load-secrets /usr/local/bin/aws-sm-resolver /usr/local/bin/openclaw /usr/local/bin/restart-openclaw
