@@ -38,8 +38,10 @@ RUN curl -fsSL https://apt.releases.hashicorp.com/gpg | gpg --dearmor -o /usr/sh
 
 # Whisper CLI (OpenAI Whisper)
 # Installs `whisper` command. (Depends on ffmpeg, installed above.)
-RUN python3 -m pip install --no-cache-dir --upgrade pip \
-    && python3 -m pip install --no-cache-dir openai-whisper
+# NOTE: Debian/Ubuntu images may enforce PEP 668 (externally managed env),
+# so we explicitly allow system installs.
+RUN python3 -m pip install --no-cache-dir --break-system-packages --upgrade pip \
+    && python3 -m pip install --no-cache-dir --break-system-packages openai-whisper
 
 # Add any local configuration or customizations below.
 # Examples:
