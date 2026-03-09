@@ -24,6 +24,9 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
          dnsutils \
          jq \
          libimage-exiftool-perl \
+         ffmpeg \
+         yt-dlp \
+         python3 python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
 # Terraform (HashiCorp APT repo)
@@ -32,6 +35,13 @@ RUN curl -fsSL https://apt.releases.hashicorp.com/gpg | gpg --dearmor -o /usr/sh
       > /etc/apt/sources.list.d/hashicorp.list \
     && apt-get update && apt-get install -y --no-install-recommends terraform \
     && rm -rf /var/lib/apt/lists/*
+
+# Whisper CLI (OpenAI Whisper)
+# Installs `whisper` command. (Depends on ffmpeg, installed above.)
+# NOTE: Debian/Ubuntu images may enforce PEP 668 (externally managed env),
+# so we explicitly allow system installs.
+RUN python3 -m pip install --no-cache-dir --break-system-packages --upgrade pip \
+    && python3 -m pip install --no-cache-dir --break-system-packages openai-whisper
 
 # Add any local configuration or customizations below.
 # Examples:
