@@ -1,0 +1,45 @@
+#!/bin/sh
+
+# ecs-exec-nextcloud — Interactive shell into the running Nextcloud ECS container
+#
+# Usage: script/ecs-exec-nextcloud [command]
+#   script/ecs-exec-nextcloud              # /bin/bash
+#   script/ecs-exec-nextcloud /bin/sh      # sh
+
+set -e
+
+CLUSTER="openclaw"
+SERVICE="openclaw-nextcloud"
+CONTAINER="nextcloud"
+REGION="${AWS_REGION:-us-west-2}"
+COMMAND="${1:-/bin/bash}"
+shift 2>/dev/null || true
+
+TASK_ARN=$(AWS_PROFILE="${AWS_PROFILE:-openclaw-dev}" aws ecs list-tasks \
+  --cluster "$CLUSTER" \
+  --service-name "$SERVICE" \
+  --desired-status RUNNING \
+  --region "$REGION" \
+  --query 'taskArns[0]' \
+  --output text)
+
+if [ "$TASK_ARN" = "None" ] || [ -z "$TASK_ARN" ]; then
+  echo "error: no running tasks for service $SERVICE in cluster $CLUSTER" >&2
+  exit 1
+fi
+
+echo "Connecting to $TASK_ARN ..."
+
+if [ "$#" -eq 0 ] && [ "$COMMAND" = "/bin/bash" ]; then
+  EXEC_COMMAND="/bin/bash"
+else
+  EXEC_COMMAND="$COMMAND $*"
+fi
+
+exec env AWS_PROFILE="${AWS_PROFILE:-openclaw-dev}" aws ecs execute-command \
+  --cluster "$CLUSTER" \
+  --task "$TASK_ARN" \
+  --container "$CONTAINER" \
+  --region "$REGION" \
+  --interactive \
+  --command "$EXEC_COMMAND"
