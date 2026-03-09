@@ -18,6 +18,7 @@ shift 2>/dev/null || true
 
 TASK_ARN=$(AWS_PROFILE="${AWS_PROFILE:-openclaw-dev}" aws ecs list-tasks \
   --cluster "$CLUSTER" \
+  --service-name "$CLUSTER" \
   --desired-status RUNNING \
   --region "$REGION" \
   --query 'taskArns[0]' \
