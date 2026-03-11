@@ -48,7 +48,7 @@ RUN python3 -m pip install --no-cache-dir --break-system-packages --upgrade pip 
 
 # Google Workspace CLI (gws)
 # Installed via npm so we can regularly update it (Dependabot/Renovate can bump pinned version).
-ARG GWS_VERSION=latest
+ARG GWS_VERSION=0.41.2
 RUN npm install -g @googleworkspace/cli@${GWS_VERSION}
 
 # Add any local configuration or customizations below.
