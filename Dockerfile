@@ -27,6 +27,9 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
          ffmpeg \
          yt-dlp \
          python3 python3-pip \
+         imagemagick \
+         poppler-utils \
+         libreoffice \
     && rm -rf /var/lib/apt/lists/*
 
 # Terraform (HashiCorp APT repo)
@@ -42,6 +45,11 @@ RUN curl -fsSL https://apt.releases.hashicorp.com/gpg | gpg --dearmor -o /usr/sh
 # so we explicitly allow system installs.
 RUN python3 -m pip install --no-cache-dir --break-system-packages --upgrade pip \
     && python3 -m pip install --no-cache-dir --break-system-packages openai-whisper
+
+# Google Workspace CLI (gws)
+# Installed via npm so we can regularly update it (Dependabot/Renovate can bump pinned version).
+ARG GWS_VERSION=latest
+RUN npm install -g @googleworkspace/cli@${GWS_VERSION}
 
 # Add any local configuration or customizations below.
 # Examples:
