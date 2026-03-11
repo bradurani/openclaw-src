@@ -27,6 +27,9 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
          ffmpeg \
          yt-dlp \
          python3 python3-pip \
+         imagemagick \
+         poppler-utils \
+         libreoffice \
     && rm -rf /var/lib/apt/lists/*
 
 # Terraform (HashiCorp APT repo)
