@@ -2,8 +2,10 @@
 
 # entrypoint.sh - Merge image config with EFS persistent state
 #
-# On ECS the EFS volume is mounted at /data. This script symlinks runtime state
-# directories from ~/.openclaw into /data so they persist across deploys.
+# On ECS the EFS volume is mounted at /data. The Docker image bakes a symlink
+# /home/node/.openclaw -> /data/.openclaw so the root FS can be read-only.
+# This script ensures the EFS target directory exists and copies completions,
+# extensions, and config patches from the image staging area into EFS.
 # Locally (no /data mount) everything stays in ~/.openclaw as-is.
 #
 # NOTE: Changes to this file trigger a deploy via CI.
@@ -12,27 +14,22 @@ set -e
 
 OPENCLAW_DIR="${HOME}/.openclaw"
 EFS_DIR="${EFS_MOUNT_PATH:-/data}"
-
-# Symlink the entire .openclaw directory to EFS
 EFS_OPENCLAW_DIR="${EFS_DIR}/.openclaw"
 
 if [ -d "$EFS_DIR" ] && mountpoint -q "$EFS_DIR" 2>/dev/null; then
-  echo "entrypoint: EFS detected at $EFS_DIR - linking .openclaw directory"
+  echo "entrypoint: EFS detected at $EFS_DIR"
 
-  # Create .openclaw directory on EFS if it doesn't exist
+  # Create .openclaw directory on EFS if it doesn't exist.
+  # The symlink /home/node/.openclaw -> /data/.openclaw is baked into the image
+  # at build time so the root filesystem can stay read-only.
   mkdir -p "$EFS_OPENCLAW_DIR"
   # Ensure strict permissions on the state dir
   if [ "$(id -u)" = "0" ]; then
     chown node:node "$EFS_OPENCLAW_DIR"
   fi
   chmod 700 "$EFS_OPENCLAW_DIR" 2>/dev/null || true
-  # Remove the baked-in .openclaw directory from the image
-  rm -rf "$OPENCLAW_DIR"
 
-  # Symlink so openclaw reads/writes to EFS transparently
-  ln -sfn "$EFS_OPENCLAW_DIR" "$OPENCLAW_DIR"
-
-  echo "entrypoint: $OPENCLAW_DIR linked to $EFS_OPENCLAW_DIR for persistence"
+  echo "entrypoint: $OPENCLAW_DIR -> $EFS_OPENCLAW_DIR (symlink baked in image)"
 else
   echo "entrypoint: no EFS mount at $EFS_DIR"
   echo "entrypoint: using local $OPENCLAW_DIR"
