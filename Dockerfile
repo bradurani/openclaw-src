@@ -46,6 +46,11 @@ RUN curl -fsSL https://apt.releases.hashicorp.com/gpg | gpg --dearmor -o /usr/sh
 RUN python3 -m pip install --no-cache-dir --break-system-packages --upgrade pip \
     && python3 -m pip install --no-cache-dir --break-system-packages openai-whisper
 
+# Google Workspace CLI (gws)
+# Installed via npm so we can regularly update it (Dependabot/Renovate can bump pinned version).
+ARG GWS_VERSION=latest
+RUN npm install -g @googleworkspace/cli@${GWS_VERSION}
+
 # Add any local configuration or customizations below.
 # Examples:
 COPY config/ ./config/
