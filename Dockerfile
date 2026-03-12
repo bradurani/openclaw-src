@@ -23,6 +23,7 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
          gh vim nano \
          dnsutils \
          jq \
+         gosu \
          libimage-exiftool-perl \
          ffmpeg \
          yt-dlp \
@@ -100,7 +101,9 @@ RUN chown -R node:node /home/node/src/openclaw
 # only needs to mkdir on EFS, not touch the root FS.
 RUN rm -rf /home/node/.openclaw && ln -sfn /data/.openclaw /home/node/.openclaw
 
-USER node
+# Container starts as root so the entrypoint can fix /tmp permissions (Fargate
+# ephemeral volumes mount as root:root 755). The entrypoint drops to the node
+# user via gosu before exec-ing the main process.
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
