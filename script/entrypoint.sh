@@ -4,15 +4,26 @@
 #
 # On ECS the EFS volume is mounted at /data. The Docker image bakes a symlink
 # /home/node/.openclaw -> /data/.openclaw so the root FS can be read-only.
-# This script ensures the EFS target directory exists and copies completions,
-# extensions, and config patches from the image staging area into EFS.
+# This script runs as root to fix /tmp permissions, ensures the EFS target
+# directory exists, copies completions/extensions/patches, and then drops
+# privileges to the node user via gosu before exec-ing the main process.
 # Locally (no /data mount) everything stays in ~/.openclaw as-is.
 #
 # NOTE: Changes to this file trigger a deploy via CI.
 
 set -e
 
-OPENCLAW_DIR="${HOME}/.openclaw"
+# ---------------------------------------------------------------------------
+# Fix /tmp permissions for read-only root filesystem.
+# Fargate ephemeral volumes mount as root:root 755. OpenClaw needs a writable
+# /tmp to create temp dirs. Set standard /tmp permissions (world-writable +
+# sticky bit) when running as root.
+# ---------------------------------------------------------------------------
+if [ "$(id -u)" = "0" ] && [ -d /tmp ]; then
+  chmod 1777 /tmp
+fi
+
+OPENCLAW_DIR="/home/node/.openclaw"
 EFS_DIR="${EFS_MOUNT_PATH:-/data}"
 EFS_OPENCLAW_DIR="${EFS_DIR}/.openclaw"
 
@@ -84,4 +95,8 @@ if [ "$#" -eq 0 ]; then
   exit 1
 fi
 
+# Drop privileges to the node user for the main process.
+if [ "$(id -u)" = "0" ]; then
+  exec gosu node "$@"
+fi
 exec "$@"
