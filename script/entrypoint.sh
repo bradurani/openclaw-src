@@ -2,26 +2,14 @@
 
 # entrypoint.sh - Merge image config with EFS persistent state
 #
-# On ECS the EFS volume is mounted at /data. The Docker image bakes a symlink
-# /home/node/.openclaw -> /data/.openclaw so the root FS can be read-only.
-# This script runs as root to fix /tmp permissions, ensures the EFS target
-# directory exists, copies completions/extensions/patches, and then drops
-# privileges to the node user via gosu before exec-ing the main process.
+# On ECS the EFS volume is mounted at /data. This script symlinks
+# /home/node/.openclaw -> /data/.openclaw, copies completions/extensions/patches
+# from the image, applies config patches, and then execs the main process.
 # Locally (no /data mount) everything stays in ~/.openclaw as-is.
 #
 # NOTE: Changes to this file trigger a deploy via CI.
 
 set -e
-
-# ---------------------------------------------------------------------------
-# Fix /tmp permissions for read-only root filesystem.
-# Fargate ephemeral volumes mount as root:root 755. OpenClaw needs a writable
-# /tmp to create temp dirs. Set standard /tmp permissions (world-writable +
-# sticky bit) when running as root.
-# ---------------------------------------------------------------------------
-if [ "$(id -u)" = "0" ] && [ -d /tmp ]; then
-  chmod 1777 /tmp
-fi
 
 OPENCLAW_DIR="/home/node/.openclaw"
 EFS_DIR="${EFS_MOUNT_PATH:-/data}"
@@ -30,17 +18,14 @@ EFS_OPENCLAW_DIR="${EFS_DIR}/.openclaw"
 if [ -d "$EFS_DIR" ] && mountpoint -q "$EFS_DIR" 2>/dev/null; then
   echo "entrypoint: EFS detected at $EFS_DIR"
 
-  # Create .openclaw directory on EFS if it doesn't exist.
-  # The symlink /home/node/.openclaw -> /data/.openclaw is baked into the image
-  # at build time so the root filesystem can stay read-only.
   mkdir -p "$EFS_OPENCLAW_DIR"
-  # Ensure strict permissions on the state dir
-  if [ "$(id -u)" = "0" ]; then
-    chown node:node "$EFS_OPENCLAW_DIR"
-  fi
   chmod 700 "$EFS_OPENCLAW_DIR" 2>/dev/null || true
 
-  echo "entrypoint: $OPENCLAW_DIR -> $EFS_OPENCLAW_DIR (symlink baked in image)"
+  # Symlink ~/.openclaw to the EFS-backed directory
+  rm -rf "$OPENCLAW_DIR"
+  ln -sfn "$EFS_OPENCLAW_DIR" "$OPENCLAW_DIR"
+
+  echo "entrypoint: $OPENCLAW_DIR -> $EFS_OPENCLAW_DIR"
 else
   echo "entrypoint: no EFS mount at $EFS_DIR"
   echo "entrypoint: using local $OPENCLAW_DIR"
@@ -95,8 +80,4 @@ if [ "$#" -eq 0 ]; then
   exit 1
 fi
 
-# Drop privileges to the node user for the main process.
-if [ "$(id -u)" = "0" ]; then
-  exec gosu node "$@"
-fi
 exec "$@"

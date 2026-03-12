@@ -23,7 +23,6 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
          gh vim nano \
          dnsutils \
          jq \
-         gosu \
          libimage-exiftool-perl \
          ffmpeg \
          yt-dlp \
@@ -94,16 +93,7 @@ RUN git config --system user.name "bradurani" \
 # Set ownership of the entire src directory to the node user, since some files are copied to the EFS int he entrypoint.
 RUN chown -R node:node /home/node/src/openclaw
 
-# Bake the .openclaw -> EFS symlink at build time so the root filesystem can be
-# mounted read-only at runtime (readonlyRootFilesystem=true in ECS).
-# The base image ships /home/node/.openclaw as a real directory; replace it with
-# a symlink to /data/.openclaw (the EFS mount point).  At runtime the entrypoint
-# only needs to mkdir on EFS, not touch the root FS.
-RUN rm -rf /home/node/.openclaw && ln -sfn /data/.openclaw /home/node/.openclaw
-
-# Container starts as root so the entrypoint can fix /tmp permissions (Fargate
-# ephemeral volumes mount as root:root 755). The entrypoint drops to the node
-# user via gosu before exec-ing the main process.
+USER node
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
