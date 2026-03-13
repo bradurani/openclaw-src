@@ -67,10 +67,12 @@ COPY --chown=node:node config/patches/          /home/node/src/openclaw/config/p
 # Install dependencies for custom extensions (memory-pgvector)
 RUN cd /home/node/src/openclaw/extensions/memory-pgvector && npm install --omit=dev
 
-# AWS SDK for the SecretRef exec provider (aws-sm-resolver)
+# AWS SDK packages used by:
+#   - aws-sm-resolver (SecretRef exec provider) — @aws-sdk/client-secrets-manager
+#   - webhooks-consumer sidecar — @aws-sdk/client-sqs, @aws-sdk/client-secrets-manager
 # Install to a standalone directory — /app uses pnpm's strict lockfile
 # and `npm install` inside it fails with a lockfile parse error.
-RUN mkdir -p /opt/aws-sdk && cd /opt/aws-sdk && npm init -y --silent && npm install --no-save @aws-sdk/client-secrets-manager
+RUN mkdir -p /opt/aws-sdk && cd /opt/aws-sdk && npm init -y --silent && npm install --no-save @aws-sdk/client-secrets-manager @aws-sdk/client-sqs
 
 # Entrypoint script — merges image config with EFS persistent state on ECS.
 COPY --chown=node:node script/entrypoint.sh /usr/local/bin/entrypoint.sh
