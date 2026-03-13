@@ -74,6 +74,11 @@ RUN cd /home/node/src/openclaw/extensions/memory-pgvector && npm install --omit=
 # and `npm install` inside it fails with a lockfile parse error.
 RUN mkdir -p /opt/aws-sdk && cd /opt/aws-sdk && npm init -y --silent && npm install --no-save @aws-sdk/client-secrets-manager @aws-sdk/client-sqs
 
+# ESM (import) ignores NODE_PATH — it resolves packages by walking up from the
+# importing file looking for node_modules/. Symlink so the webhooks-consumer
+# script at /home/node/src/openclaw/scripts/ can find the AWS SDK packages.
+RUN ln -s /opt/aws-sdk/node_modules /home/node/src/openclaw/scripts/node_modules
+
 # Entrypoint script — merges image config with EFS persistent state on ECS.
 COPY --chown=node:node script/entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY --chown=node:node script/load-secrets /usr/local/bin/load-secrets
