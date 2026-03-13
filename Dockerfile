@@ -61,6 +61,7 @@ COPY skills/ ./skills/
 # they live on EFS and are symlinked at startup by the entrypoint script.
 COPY --chown=node:node openclaw/completions/    /home/node/src/openclaw/completions/
 COPY --chown=node:node openclaw/extensions/     /home/node/src/openclaw/extensions/
+COPY --chown=node:node openclaw/scripts/        /home/node/src/openclaw/scripts/
 COPY --chown=node:node config/patches/          /home/node/src/openclaw/config/patches/
 
 # Install dependencies for custom extensions (memory-pgvector)
